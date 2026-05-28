@@ -5,6 +5,8 @@ from langchain_core.messages import HumanMessage
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
+from app.observability.langfuse import get_langfuse_client
+
 router = APIRouter(prefix="/v1")
 
 
@@ -30,7 +32,19 @@ async def chat(req: ChatRequest, request: Request) -> EventSourceResponse:
         if req.document_ids:
             state_input["document_ids"] = req.document_ids
 
-        result = graph.invoke(state_input, config)
+        client = get_langfuse_client()
+        if client:
+            trace_id = client.create_trace_id()
+            with client.start_as_current_observation(
+                name=f"chat:{req.thread_id}",
+                trace_id=trace_id,
+            ) as span:
+                result = graph.invoke(state_input, config)
+                last = result["messages"][-1]
+                span.update(output=last.content)
+        else:
+            result = graph.invoke(state_input, config)
+
         last = result["messages"][-1]
         payload: dict = {"content": last.content}
         citations = result.get("citations")
