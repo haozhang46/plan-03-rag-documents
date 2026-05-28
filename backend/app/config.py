@@ -1,6 +1,10 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_DEFAULT_SKILLS_ROOT = _REPO_ROOT / "skills"
 
 
 class Settings(BaseSettings):
@@ -14,6 +18,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     default_llm_provider: str = "openai"
     default_model: str = "gpt-4o-mini"
+    skills_root: str = str(_DEFAULT_SKILLS_ROOT)
 
 
 @lru_cache
