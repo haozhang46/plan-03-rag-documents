@@ -1,0 +1,33 @@
+# Apple Silicon: 使用原生 arm64，避免触发 Rosetta 模拟（VZErrorDomain Code=1）
+services:
+  db:
+    image: postgres:16
+    platform: linux/arm64
+    environment:
+      POSTGRES_USER: agent
+      POSTGRES_PASSWORD: agent
+      POSTGRES_DB: agentflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent -d agentflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: ./backend
+    platform: linux/arm64
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://agent:agent@db:5432/agentflow
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
