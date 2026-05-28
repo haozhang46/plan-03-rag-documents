@@ -1,0 +1,16 @@
+skills:
+  - name: test-driven-development
+    description: Use when implementing features; follow red-green-refactor
+    skill_type: instruction
+    spawn_subagent: false
+    path: test-driven-development/SKILL.md
+    triggers:
+      - tdd
+      - test-driven
+  - name: subagent-driven-development
+    description: Use when executing multi-step implementation plans with review gates
+    skill_type: workflow
+    spawn_subagent: true
+    path: subagent-driven-development/SKILL.md
+    triggers:
+      - subagent
