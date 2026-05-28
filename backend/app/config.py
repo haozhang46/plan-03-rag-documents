@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     default_llm_provider: str = "openai"
     default_model: str = "gpt-4o-mini"
     skills_root: str = str(_DEFAULT_SKILLS_ROOT)
+    langfuse_public_key: str | None = None
+    langfuse_secret_key: str | None = None
+    langfuse_host: str = "https://cloud.langfuse.com"
+    langfuse_enabled: bool = False
 
 @lru_cache
 def get_settings() -> Settings:
