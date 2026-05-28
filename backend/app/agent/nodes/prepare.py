@@ -19,7 +19,7 @@ def prepare_node(state: AgentState) -> dict:
     root = Path(get_settings().skills_root)
     parts: list[str] = []
     for meta in selected:
-        body = load_l2(root / meta.path)
+        body = load_l2(root / meta.path, skill_name=meta.name)
         parts.append(f"## Skill: {meta.name}\n{body}")
     skill_prompt = "\n\n".join(parts)
     return {
