@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     default_llm_provider: str = "openai"
     default_model: str = "gpt-4o-mini"
+    embedding_provider: str = "openai"
+    embedding_model: str = "text-embedding-3-small"
     skills_root: str = str(_DEFAULT_SKILLS_ROOT)
 
 

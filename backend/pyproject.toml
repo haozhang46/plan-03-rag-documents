@@ -19,6 +19,8 @@ dependencies = [
   "sse-starlette>=2.1.0",
   "psycopg[binary,pool]>=3.2.0",
   "pyyaml>=6.0.0",
+  "langchain-text-splitters>=0.3.0",
+  "pypdf>=5.0.0",
 ]
 
 [project.optional-dependencies]
@@ -31,3 +33,6 @@ packages = ["app", "app.agent", "app.agent.nodes", "app.api", "app.api.routes", 
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+    "integration: tests requiring a live PostgreSQL database",
+]
