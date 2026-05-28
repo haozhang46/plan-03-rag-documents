@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from langgraph.checkpoint.memory import MemorySaver
 
 from app.agent.graph import build_graph
-from app.api.routes import chat, health
+from app.api.routes import chat, documents, health
 from app.config import get_settings
 
 
@@ -16,6 +16,7 @@ def test_app() -> FastAPI:
     application.state.graph = build_graph(checkpointer=MemorySaver())
     application.include_router(health.router)
     application.include_router(chat.router)
+    application.include_router(documents.router)
     return application
 
 

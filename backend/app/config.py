@@ -20,7 +20,6 @@ class Settings(BaseSettings):
     default_model: str = "gpt-4o-mini"
     skills_root: str = str(_DEFAULT_SKILLS_ROOT)
 
-
 @lru_cache
 def get_settings() -> Settings:
     return Settings()

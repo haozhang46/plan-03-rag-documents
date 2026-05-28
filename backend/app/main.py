@@ -6,8 +6,10 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from app.agent.graph import build_graph
-from app.api.routes import chat, health
+from app.api.routes import chat, documents, health
 from app.config import get_settings
+from app.rag.db import create_tables
+from app.rag.store import DocumentStore
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +32,8 @@ async def lifespan(app: FastAPI):
             ) as checkpointer:
                 await checkpointer.setup()
                 app.state.graph = build_graph(checkpointer=checkpointer)
+                await create_tables()
+                app.state.store = DocumentStore()
                 logger.info("Checkpointer: Postgres")
                 yield
             return
@@ -49,3 +53,4 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Agent Flow API", lifespan=lifespan)
 app.include_router(health.router)
 app.include_router(chat.router)
+app.include_router(documents.router)
