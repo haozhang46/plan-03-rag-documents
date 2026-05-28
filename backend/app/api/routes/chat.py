@@ -2,7 +2,7 @@ import json
 
 from fastapi import APIRouter, Request
 from langchain_core.messages import HumanMessage
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 router = APIRouter(prefix="/v1")
@@ -11,6 +11,7 @@ router = APIRouter(prefix="/v1")
 class ChatRequest(BaseModel):
     thread_id: str
     message: str
+    document_ids: list[str] = Field(default_factory=list)
 
 
 @router.post("/chat")
@@ -19,14 +20,22 @@ async def chat(req: ChatRequest, request: Request) -> EventSourceResponse:
     config = {"configurable": {"thread_id": req.thread_id}}
 
     async def event_stream():
-        result = graph.invoke(
-            {"messages": [HumanMessage(content=req.message)]},
+        result = await graph.ainvoke(
+            {
+                "messages": [HumanMessage(content=req.message)],
+                "document_ids": req.document_ids,
+            },
             config,
         )
         last = result["messages"][-1]
         yield {
             "event": "message",
-            "data": json.dumps({"content": last.content}),
+            "data": json.dumps(
+                {
+                    "content": last.content,
+                    "citations": result.get("citations") or [],
+                }
+            ),
         }
         yield {"event": "done", "data": "{}"}
 
