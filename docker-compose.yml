@@ -1,7 +1,7 @@
 # Apple Silicon: 使用原生 arm64，避免触发 Rosetta 模拟（VZErrorDomain Code=1）
 services:
   db:
-    image: postgres:16
+    image: pgvector/pgvector:pg16
     platform: linux/arm64
     environment:
       POSTGRES_USER: agent
