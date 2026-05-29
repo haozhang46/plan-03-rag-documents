@@ -3,6 +3,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 CREATE TABLE documents (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   filename TEXT NOT NULL,
+  content_type TEXT,
   embedding_model TEXT,
   embedding_dimensions INT,
   created_at TIMESTAMPTZ DEFAULT now()
