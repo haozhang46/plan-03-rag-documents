@@ -24,7 +24,7 @@ def _normalize_hits(hits: list) -> list[ChunkHit]:
     return out
 
 
-def rag_node(state: AgentState, config: RunnableConfig) -> dict:
+def retrieve_rag_context(state: AgentState, config: RunnableConfig) -> dict:
     ids = (state.get("document_ids") or [])
     if not ids:
         return {}
@@ -59,3 +59,7 @@ def rag_node(state: AgentState, config: RunnableConfig) -> dict:
         ],
         "citations": [h.chunk_id for h in hits],
     }
+
+
+def rag_node(state: AgentState, config: RunnableConfig) -> dict:
+    return retrieve_rag_context(state, config)

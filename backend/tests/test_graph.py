@@ -49,13 +49,15 @@ async def test_supervisor_graph_skips_rag_when_planner_chooses_chat(monkeypatch,
     monkeypatch.setattr("app.agent.nodes.chat.get_chat_model", lambda: fake)
 
     rag_called = {"n": 0}
-    original_rag = __import__("app.agent.nodes.rag", fromlist=["rag_node"]).rag_node
+    from app.agent.graphs import rag_agent as rag_agent_mod
+
+    original_rag = rag_agent_mod.rag_agent_node
 
     def _counting_rag(state, config):
         rag_called["n"] += 1
         return original_rag(state, config)
 
-    monkeypatch.setattr("app.agent.nodes.rag.rag_node", _counting_rag)
+    monkeypatch.setattr(rag_agent_mod, "rag_agent_node", _counting_rag)
 
     from app.agent.graph import build_graph
 

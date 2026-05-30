@@ -27,6 +27,8 @@ def _last_human_content(state: AgentState) -> str:
 
 
 def heuristic_next_agent(state: AgentState) -> NextAgent:
+    if state.get("rag_completed") or state.get("citations"):
+        return "chat"
     ids = state.get("document_ids") or []
     if not ids:
         return "chat"

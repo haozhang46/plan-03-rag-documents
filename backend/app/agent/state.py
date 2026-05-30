@@ -11,3 +11,4 @@ class AgentState(TypedDict):
     query_embedding: NotRequired[list[float]]
     next_agent: NotRequired[Literal["rag", "chat"]]
     planner_reason: NotRequired[str]
+    rag_completed: NotRequired[bool]

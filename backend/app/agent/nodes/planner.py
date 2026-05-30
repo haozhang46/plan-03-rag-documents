@@ -26,6 +26,12 @@ def _planner_system_prompt(state: AgentState) -> str:
 
 
 def planner_node(state: AgentState) -> dict:
+    if state.get("rag_completed") or state.get("citations"):
+        return {
+            "next_agent": "chat",
+            "planner_reason": "rag already completed; routing to chat",
+        }
+
     client = get_langfuse_client()
 
     def _run() -> dict:
