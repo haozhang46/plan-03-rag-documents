@@ -70,3 +70,13 @@ curl -N -X POST http://localhost:8000/v1/chat \
   -H 'Content-Type: application/json' \
   -d '{"thread_id":"demo","message":"hello"}'
 ```
+
+With uploaded documents (pass `document_ids` from `POST /v1/documents`):
+
+```bash
+curl -N -X POST http://localhost:8000/v1/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"thread_id":"demo","message":"summarize the uploaded document","document_ids":["YOUR_DOC_ID"]}'
+```
+
+With `SUPERVISOR_MODE=llm`, RAG runs only when the planner routes to `rag` (typically when `document_ids` are present and the question needs document content). With `SUPERVISOR_MODE=off` (default), the graph always runs `prepare → rag → chat`.
