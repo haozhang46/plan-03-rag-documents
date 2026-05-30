@@ -3,6 +3,15 @@ from langchain_core.messages import HumanMessage
 from app.agent.models.router import NextAgent
 from app.agent.state import AgentState
 
+_CODE_KEYWORDS = (
+    "python",
+    "run code",
+    "calculate",
+    "计算",
+    "代码",
+)
+
+
 _DOC_KEYWORDS = (
     "document",
     "file",
@@ -29,10 +38,14 @@ def _last_human_content(state: AgentState) -> str:
 def heuristic_next_agent(state: AgentState) -> NextAgent:
     if state.get("rag_completed") or state.get("citations"):
         return "chat"
+    if state.get("code_completed"):
+        return "chat"
+    text = _last_human_content(state).lower()
+    if any(k in text for k in _CODE_KEYWORDS):
+        return "code"
     ids = state.get("document_ids") or []
     if not ids:
         return "chat"
-    text = _last_human_content(state).lower()
     if any(k in text for k in _DOC_KEYWORDS):
         return "rag"
     return "chat"
@@ -40,6 +53,6 @@ def heuristic_next_agent(state: AgentState) -> NextAgent:
 
 def route_after_planner(state: AgentState) -> NextAgent:
     explicit = state.get("next_agent")
-    if explicit in ("rag", "chat"):
+    if explicit in ("rag", "chat", "code"):
         return explicit
     return heuristic_next_agent(state)

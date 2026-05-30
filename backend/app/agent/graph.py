@@ -1,5 +1,6 @@
 from langgraph.graph import END, START, StateGraph
 
+from app.agent.graphs.code_agent import code_agent_node
 from app.agent.graphs.rag_agent import rag_agent_node
 from app.agent.nodes.chat import chat_node
 from app.agent.nodes.planner import planner_node
@@ -27,15 +28,17 @@ def _build_supervisor_graph(checkpointer=None):
     graph.add_node("prepare", prepare_node)
     graph.add_node("planner", planner_node)
     graph.add_node("rag", rag_agent_node)
+    graph.add_node("code", code_agent_node)
     graph.add_node("chat", chat_node)
     graph.add_edge(START, "prepare")
     graph.add_edge("prepare", "planner")
     graph.add_conditional_edges(
         "planner",
         route_after_planner,
-        {"rag": "rag", "chat": "chat"},
+        {"rag": "rag", "chat": "chat", "code": "code"},
     )
     graph.add_edge("rag", "planner")
+    graph.add_edge("code", "planner")
     graph.add_edge("chat", END)
     return graph.compile(checkpointer=checkpointer)
 

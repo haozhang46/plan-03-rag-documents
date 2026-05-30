@@ -18,7 +18,8 @@ def _planner_system_prompt(state: AgentState) -> str:
         "You are the routing planner for an agent platform.\n"
         "Choose next_agent:\n"
         "- rag: user question requires content from uploaded documents AND document_ids are present.\n"
-        "- chat: general conversation, coding help, or no documents attached.\n"
+        "- code: user wants Python code executed, calculations run, or numeric/script output.\n"
+        "- chat: general conversation, coding help without execution, or no documents attached.\n"
         "Never choose rag if document_ids is empty.\n\n"
         f"document_ids present: {bool(doc_ids)} ({len(doc_ids)} ids)\n\n"
         f"Available skills (metadata only):\n{skill_lines}\n"
@@ -30,6 +31,12 @@ def planner_node(state: AgentState) -> dict:
         return {
             "next_agent": "chat",
             "planner_reason": "rag already completed; routing to chat",
+        }
+
+    if state.get("code_completed"):
+        return {
+            "next_agent": "chat",
+            "planner_reason": "code already completed; routing to chat",
         }
 
     client = get_langfuse_client()
