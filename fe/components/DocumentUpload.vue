@@ -3,7 +3,7 @@
     <input
       ref="fileInput"
       type="file"
-      accept=".pdf,.txt,.md"
+      accept=".txt,.md"
       class="hidden"
       @change="handleFile"
     />
@@ -38,8 +38,8 @@ async function handleFile(e: Event) {
   if (!file) return;
   uploading.value = true;
   try {
-    const { uploadDocument } = useChat();
-    const { document_id } = await uploadDocument(file);
+    const { syncTextFile } = useDocumentSync();
+    const document_id = await syncTextFile(file);
     documentIds.value.push(document_id);
     emit("uploaded", document_id);
   } finally {

@@ -35,7 +35,7 @@
 <script setup lang="ts">
 const { threads, activeThreadId, create, updateTitle } = useThreads();
 const { messages, loading, addUserMessage, addAssistantChunk } = useMessages(activeThreadId);
-const { streamChat } = useChat();
+const { streamChat, embedQuery } = useChat();
 
 const documentIds = ref<string[]>([]);
 
@@ -60,7 +60,15 @@ async function onSend(text: string) {
   loading.value = true;
 
   try {
-    const gen = streamChat(threadId, text, documentIds.value.length ? documentIds.value : undefined);
+    const queryEmbedding = documentIds.value.length
+      ? await embedQuery(text)
+      : undefined;
+    const gen = streamChat(
+      threadId,
+      text,
+      documentIds.value.length ? documentIds.value : undefined,
+      queryEmbedding,
+    );
     for await (const chunk of gen) {
       if (chunk.content) {
         addAssistantChunk(chunk.content, chunk.citations);
