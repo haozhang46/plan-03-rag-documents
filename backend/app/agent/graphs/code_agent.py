@@ -7,6 +7,7 @@ from langgraph.graph import END, START, StateGraph
 from app.agent.state import AgentState
 from app.agent.tools.run_python import run_python
 from app.observability.langfuse import get_langfuse_client
+from app.skills.loader import load_l3
 
 _PYTHON_BLOCK_RE = re.compile(r"```python\s*\n(.*?)```", re.DOTALL | re.IGNORECASE)
 
@@ -41,10 +42,21 @@ def _run_code_node(state: AgentState, config: RunnableConfig) -> dict:
         if result["stderr"]:
             output_parts.append(f"stderr:\n{result['stderr']}")
         body = "\n".join(output_parts) if output_parts else error
-        return {
-            "messages": [SystemMessage(content=f"code execution failed:\n{body}")],
-            "code_error": error,
-        }
+
+        messages = [SystemMessage(content=f"code execution failed:\n{body}")]
+        out: dict = {"messages": messages, "code_error": error}
+
+        selected_skills = state.get("selected_skills") or []
+        if selected_skills:
+            query = f"{result.get('stderr', '')} {error}"
+            l3_content = load_l3(selected_skills[0], query)
+            if l3_content:
+                messages.append(
+                    SystemMessage(content=f"<l3_refs>\n{l3_content}\n</l3_refs>")
+                )
+                out["l3_context"] = l3_content
+
+        return out
 
     stdout = result["stdout"].rstrip()
     return {

@@ -17,3 +17,4 @@ class AgentState(TypedDict):
     code_error: NotRequired[str]
     selected_skills: NotRequired[list[str]]
     skill_context: NotRequired[str]
+    l3_context: NotRequired[str]
