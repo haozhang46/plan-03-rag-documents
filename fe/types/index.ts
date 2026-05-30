@@ -21,3 +21,16 @@ export interface Thread {
   title: string;
   updatedAt: string;
 }
+
+export interface ChunkUpload {
+  chunk_index: number;
+  content: string;
+  embedding: number[];
+}
+
+export interface CreateDocumentBody {
+  filename: string;
+  content_type: string;
+  embedding_model: string;
+  embedding_dimensions: number;
+}
