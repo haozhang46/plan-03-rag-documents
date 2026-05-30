@@ -18,12 +18,20 @@ def prepare_node(state: AgentState) -> dict:
         return {}
     root = Path(get_settings().skills_root)
     parts: list[str] = []
+    spawn_parts: list[str] = []
     for meta in selected:
         body = load_l2(root / meta.path, skill_name=meta.name)
-        parts.append(f"## Skill: {meta.name}\n{body}")
+        block = f"## Skill: {meta.name}\n{body}"
+        parts.append(block)
+        if meta.spawn_subagent:
+            spawn_parts.append(block)
     skill_prompt = "\n\n".join(parts)
-    return {
+    out: dict = {
+        "selected_skills": [meta.name for meta in selected],
         "messages": [
             SystemMessage(content=f"<skills>\n{skill_prompt}\n</skills>")
-        ]
+        ],
     }
+    if spawn_parts:
+        out["skill_context"] = "\n\n".join(spawn_parts)
+    return out

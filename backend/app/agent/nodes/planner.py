@@ -26,6 +26,20 @@ def _planner_system_prompt(state: AgentState) -> str:
     )
 
 
+def _workflow_handoff(state: AgentState) -> dict | None:
+    selected = state.get("selected_skills") or []
+    if not selected:
+        return None
+    by_name = {s.name: s for s in SkillRegistry().list_l1()}
+    spawn_names = [n for n in selected if by_name.get(n) and by_name[n].spawn_subagent]
+    if not spawn_names:
+        return None
+    return {
+        "next_agent": "code",
+        "planner_reason": f"workflow handoff: spawn_subagent skills {spawn_names}",
+    }
+
+
 def planner_node(state: AgentState) -> dict:
     if state.get("rag_completed") or state.get("citations"):
         return {
@@ -38,6 +52,9 @@ def planner_node(state: AgentState) -> dict:
             "next_agent": "chat",
             "planner_reason": "code already completed; routing to chat",
         }
+
+    if handoff := _workflow_handoff(state):
+        return handoff
 
     client = get_langfuse_client()
 

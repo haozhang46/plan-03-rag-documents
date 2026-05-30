@@ -64,11 +64,24 @@ def build_code_agent(checkpointer=None):
 _code_agent = build_code_agent()
 
 
+def _state_with_skill_context(state: AgentState) -> AgentState:
+    skill_context = state.get("skill_context")
+    if not skill_context:
+        return state
+    return {
+        **state,
+        "messages": [
+            SystemMessage(content=f"<skills>\n{skill_context}\n</skills>"),
+            *state["messages"],
+        ],
+    }
+
+
 def code_agent_node(state: AgentState, config: RunnableConfig) -> dict:
     client = get_langfuse_client()
 
     def _invoke() -> dict:
-        return _code_agent.invoke(state, config)
+        return _code_agent.invoke(_state_with_skill_context(state), config)
 
     if not client:
         return _invoke()
