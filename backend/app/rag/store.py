@@ -53,6 +53,107 @@ class DocumentStore:
         finally:
             await conn.close()
 
+    async def create_document_meta(
+        self,
+        filename: str,
+        content_type: str,
+        embedding_model: str,
+        embedding_dimensions: int,
+    ) -> str:
+        conn = await asyncpg.connect(self._dsn)
+        try:
+            row = await conn.fetchrow(
+                "INSERT INTO documents "
+                "(filename, content_type, embedding_model, embedding_dimensions) "
+                "VALUES ($1, $2, $3, $4) RETURNING id",
+                filename,
+                content_type,
+                embedding_model,
+                embedding_dimensions,
+            )
+            return str(row["id"])
+        finally:
+            await conn.close()
+
+    async def add_chunks_precomputed(
+        self,
+        doc_id: str,
+        chunks: list[dict],
+    ) -> int:
+        expected = get_settings().expected_embedding_dimensions
+        for row in chunks:
+            emb = row["embedding"]
+            if len(emb) != expected:
+                raise ValueError(
+                    f"embedding dimension {len(emb)} != expected {expected}"
+                )
+        conn = await asyncpg.connect(self._dsn)
+        try:
+            async with conn.transaction():
+                for i, row in enumerate(chunks):
+                    emb = row["embedding"]
+                    chunk_index = row.get("chunk_index", i)
+                    await conn.execute(
+                        "INSERT INTO document_chunks "
+                        "(document_id, chunk_index, content, embedding) "
+                        "VALUES ($1::uuid, $2, $3, $4)",
+                        doc_id,
+                        chunk_index,
+                        row["content"],
+                        emb,
+                    )
+            return len(chunks)
+        finally:
+            await conn.close()
+
+    async def similarity_search_by_vector(
+        self,
+        query_embedding: list[float],
+        document_ids: list[str] | None = None,
+        top_k: int = 5,
+    ) -> list[dict]:
+        expected = get_settings().expected_embedding_dimensions
+        if len(query_embedding) != expected:
+            raise ValueError(
+                f"query embedding dimension {len(query_embedding)} "
+                f"!= expected {expected}"
+            )
+        conn = await asyncpg.connect(self._dsn)
+        try:
+            if document_ids:
+                rows = await conn.fetch(
+                    "SELECT id, document_id, content, "
+                    "1 - (embedding <=> $1::vector) AS score "
+                    "FROM document_chunks "
+                    "WHERE document_id = ANY($2::uuid[]) "
+                    "ORDER BY embedding <=> $1::vector "
+                    "LIMIT $3",
+                    query_embedding,
+                    document_ids,
+                    top_k,
+                )
+            else:
+                rows = await conn.fetch(
+                    "SELECT id, document_id, content, "
+                    "1 - (embedding <=> $1::vector) AS score "
+                    "FROM document_chunks "
+                    "ORDER BY embedding <=> $1::vector "
+                    "LIMIT $2",
+                    query_embedding,
+                    top_k,
+                )
+            return [
+                {
+                    "chunk_id": str(r["id"]),
+                    "document_id": str(r["document_id"]),
+                    "content": r["content"],
+                    "score": float(r["score"]),
+                }
+                for r in rows
+            ]
+        finally:
+            await conn.close()
+
     async def similarity_search(
         self,
         query: str,

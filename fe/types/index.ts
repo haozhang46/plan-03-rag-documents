@@ -8,6 +8,7 @@ export interface ChatRequest {
   thread_id: string;
   message: string;
   document_ids?: string[];
+  query_embedding?: number[];
 }
 
 export interface ChatResponseChunk {
@@ -20,4 +21,17 @@ export interface Thread {
   id: string;
   title: string;
   updatedAt: string;
+}
+
+export interface ChunkUpload {
+  chunk_index: number;
+  content: string;
+  embedding: number[];
+}
+
+export interface CreateDocumentBody {
+  filename: string;
+  content_type: string;
+  embedding_model: string;
+  embedding_dimensions: number;
 }

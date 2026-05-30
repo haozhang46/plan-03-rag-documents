@@ -8,3 +8,4 @@ class AgentState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
     document_ids: NotRequired[list[str]]
     citations: NotRequired[list[str]]
+    query_embedding: NotRequired[list[float]]

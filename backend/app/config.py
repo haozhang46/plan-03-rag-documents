@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     langfuse_secret_key: str | None = None
     langfuse_host: str = "https://cloud.langfuse.com"
     langfuse_enabled: bool = False
+    expected_embedding_dimensions: int = 768
+    client_embedding_mode: bool = False
 
 @lru_cache
 def get_settings() -> Settings:

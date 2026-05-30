@@ -22,7 +22,7 @@ def test_upload_document(client, monkeypatch):
 
     content = b"Hello, this is a test document for upload."
     response = client.post(
-        "/v1/documents",
+        "/v1/documents/upload",
         files={"file": ("test.txt", content, "text/plain")},
     )
 

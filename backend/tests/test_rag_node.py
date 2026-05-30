@@ -59,3 +59,29 @@ def test_rag_node_injects_context_and_citations():
     assert "ctx A" in msgs[0].content
     assert "ctx B" in msgs[0].content
     assert "<context>" in msgs[0].content
+
+
+def test_rag_node_uses_query_embedding(monkeypatch):
+    from app.rag.store import ChunkHit
+
+    vec = [0.2] * 768
+
+    class _Store:
+        async def similarity_search_by_vector(self, query_vec, document_ids=None, top_k=5):
+            assert query_vec == vec
+            return [
+                ChunkHit("c1", "d1", "synced chunk", 0.9),
+            ]
+
+        async def similarity_search(self, *a, **k):
+            raise AssertionError("should not embed on server")
+
+    state = {
+        "messages": [HumanMessage(content="summarize")],
+        "document_ids": ["d1"],
+        "query_embedding": vec,
+    }
+    config = {"configurable": {"store": _Store()}}
+    out = rag_node(state, config)
+    assert "<context>" in out["messages"][0].content
+    assert "synced chunk" in out["messages"][0].content

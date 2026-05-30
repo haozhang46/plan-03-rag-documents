@@ -7,6 +7,7 @@ export function useChat() {
     threadId: string,
     message: string,
     documentIds?: string[],
+    queryEmbedding?: number[],
   ): AsyncGenerator<ChatResponseChunk> {
     const res = await fetch(`${config.public.apiBase}/v1/chat`, {
       method: "POST",
@@ -15,6 +16,7 @@ export function useChat() {
         thread_id: threadId,
         message,
         document_ids: documentIds,
+        query_embedding: queryEmbedding,
       }),
     });
 
@@ -44,18 +46,10 @@ export function useChat() {
     }
   }
 
-  async function uploadDocument(
-    file: File,
-  ): Promise<{ document_id: string }> {
-    const form = new FormData();
-    form.append("file", file);
-    const res = await fetch(`${config.public.apiBase}/v1/documents`, {
-      method: "POST",
-      body: form,
-    });
-    if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
-    return res.json();
+  async function embedQuery(message: string): Promise<number[]> {
+    const { embedText } = useOllamaEmbed();
+    return embedText(message);
   }
 
-  return { streamChat, uploadDocument };
+  return { streamChat, embedQuery };
 }

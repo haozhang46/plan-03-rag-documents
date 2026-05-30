@@ -70,3 +70,44 @@ curl -N -X POST http://localhost:8000/v1/chat \
   -H 'Content-Type: application/json' \
   -d '{"thread_id":"demo","message":"hello"}'
 ```
+
+## Document API (client-side vector sync)
+
+When `CLIENT_EMBEDDING_MODE=true`, the client embeds locally (Ollama) and syncs precomputed vectors:
+
+```bash
+# 1. Create document metadata
+curl -X POST http://localhost:8000/v1/documents \
+  -H 'Content-Type: application/json' \
+  -d '{"filename":"notes.md","content_type":"text/markdown","embedding_model":"nomic-embed-text","embedding_dimensions":768}'
+
+# 2. Upload precomputed chunks
+curl -X POST http://localhost:8000/v1/documents/{document_id}/chunks \
+  -H 'Content-Type: application/json' \
+  -d '{"chunks":[{"chunk_index":0,"content":"hello","embedding":[...768 floats...]}]}'
+
+# 3. Chat with client query embedding (optional; skips server embed)
+curl -N -X POST http://localhost:8000/v1/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"thread_id":"demo","message":"what is in the doc?","document_ids":["..."], "query_embedding":[...768 floats...]}'
+```
+
+Legacy server-side ingest (OpenAI embeddings) remains at `POST /v1/documents/upload`.
+
+### Config
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CLIENT_EMBEDDING_MODE` | `false` | When true, prefer client sync path |
+| `EXPECTED_EMBEDDING_DIMENSIONS` | `768` | pgvector column size (was 1536 in Plan 03) |
+
+### Migrating from 1536 → 768 dimensions
+
+Existing Plan 03 databases use `vector(1536)`. Client sync requires 768-dim (`nomic-embed-text`). Reset the volume:
+
+```bash
+docker compose down -v
+docker compose up -d db
+```
+
+For brownfield upgrades, run `backend/migrations/002_client_embeddings.sql` manually to add metadata columns.
