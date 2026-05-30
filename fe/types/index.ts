@@ -21,6 +21,8 @@ export interface Thread {
   id: string;
   title: string;
   updatedAt: string;
+  starred?: boolean;
+  sessionId?: string;
 }
 
 export interface ChunkUpload {

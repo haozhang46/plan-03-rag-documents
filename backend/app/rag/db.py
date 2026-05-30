@@ -27,6 +27,15 @@ CREATE TABLE IF NOT EXISTS document_chunks (
 
 CREATE INDEX IF NOT EXISTS idx_chunks_embedding
     ON document_chunks USING ivfflat (embedding vector_cosine_ops);
+
+CREATE TABLE IF NOT EXISTS sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    thread_id TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL DEFAULT 'New Chat',
+    starred BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
 """
 
 
