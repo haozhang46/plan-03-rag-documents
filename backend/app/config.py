@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     expected_embedding_dimensions: int = 768
     client_embedding_mode: bool = False
     supervisor_mode: Literal["off", "llm"] = "off"
+    summary_token_threshold: int = 4000
 
 @lru_cache
 def get_settings() -> Settings:

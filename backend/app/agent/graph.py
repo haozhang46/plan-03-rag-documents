@@ -6,7 +6,8 @@ from app.agent.nodes.chat import chat_node
 from app.agent.nodes.planner import planner_node
 from app.agent.nodes.prepare import prepare_node
 from app.agent.nodes.rag import rag_node
-from app.agent.routing import route_after_planner
+from app.agent.nodes.summarize import summarize_node
+from app.agent.routing import route_after_planner, route_after_prepare
 from app.agent.state import AgentState
 from app.config import get_settings
 
@@ -14,10 +15,16 @@ from app.config import get_settings
 def _build_linear_graph(checkpointer=None):
     graph = StateGraph(AgentState)
     graph.add_node("prepare", prepare_node)
+    graph.add_node("summarize", summarize_node)
     graph.add_node("rag", rag_node)
     graph.add_node("chat", chat_node)
     graph.add_edge(START, "prepare")
-    graph.add_edge("prepare", "rag")
+    graph.add_conditional_edges(
+        "prepare",
+        route_after_prepare,
+        {"summarize": "summarize", "rag": "rag"},
+    )
+    graph.add_edge("summarize", "rag")
     graph.add_edge("rag", "chat")
     graph.add_edge("chat", END)
     return graph.compile(checkpointer=checkpointer)
@@ -26,12 +33,18 @@ def _build_linear_graph(checkpointer=None):
 def _build_supervisor_graph(checkpointer=None):
     graph = StateGraph(AgentState)
     graph.add_node("prepare", prepare_node)
+    graph.add_node("summarize", summarize_node)
     graph.add_node("planner", planner_node)
     graph.add_node("rag", rag_agent_node)
     graph.add_node("code", code_agent_node)
     graph.add_node("chat", chat_node)
     graph.add_edge(START, "prepare")
-    graph.add_edge("prepare", "planner")
+    graph.add_conditional_edges(
+        "prepare",
+        route_after_prepare,
+        {"summarize": "summarize", "planner": "planner"},
+    )
+    graph.add_edge("summarize", "planner")
     graph.add_conditional_edges(
         "planner",
         route_after_planner,

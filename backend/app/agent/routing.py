@@ -1,7 +1,9 @@
 from langchain_core.messages import HumanMessage
 
 from app.agent.models.router import NextAgent
+from app.agent.nodes.summarize import needs_summarize
 from app.agent.state import AgentState
+from app.config import get_settings
 
 _CODE_KEYWORDS = (
     "python",
@@ -49,6 +51,14 @@ def heuristic_next_agent(state: AgentState) -> NextAgent:
     if any(k in text for k in _DOC_KEYWORDS):
         return "rag"
     return "chat"
+
+
+def route_after_prepare(state: AgentState) -> str:
+    if needs_summarize(state):
+        return "summarize"
+    if get_settings().supervisor_mode == "llm":
+        return "planner"
+    return "rag"
 
 
 def route_after_planner(state: AgentState) -> NextAgent:
