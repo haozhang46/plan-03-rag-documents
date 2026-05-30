@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -27,6 +28,7 @@ class Settings(BaseSettings):
     langfuse_enabled: bool = False
     expected_embedding_dimensions: int = 768
     client_embedding_mode: bool = False
+    supervisor_mode: Literal["off", "llm"] = "off"
 
 @lru_cache
 def get_settings() -> Settings:

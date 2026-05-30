@@ -25,7 +25,9 @@
 
 ### Backend
 
-- **Graph 拓扑（main）：** `START → prepare → chat → END`（Skill L2 在 `prepare_node` 注入）。
+- **Graph 拓扑：**
+  - `SUPERVISOR_MODE=off`: `START → prepare → rag → chat → END`
+  - `SUPERVISOR_MODE=llm`: `START → prepare → planner → rag|chat → … → END`
 - **API：** `GET /health`，`POST /v1/chat`（SSE，`thread_id` + `message`）。
 - **配置入口：** `app/config.py` + `.env`；密钥勿写入代码或提交。
 

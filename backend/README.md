@@ -94,12 +94,23 @@ curl -N -X POST http://localhost:8000/v1/chat \
 
 Legacy server-side ingest (OpenAI embeddings) remains at `POST /v1/documents/upload`.
 
+With uploaded documents (pass `document_ids` from `POST /v1/documents`):
+
+```bash
+curl -N -X POST http://localhost:8000/v1/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"thread_id":"demo","message":"summarize the uploaded document","document_ids":["YOUR_DOC_ID"]}'
+```
+
+With `SUPERVISOR_MODE=llm`, RAG runs only when the planner routes to `rag` (typically when `document_ids` are present and the question needs document content). With `SUPERVISOR_MODE=off` (default), the graph always runs `prepare → rag → chat`.
+
 ### Config
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `CLIENT_EMBEDDING_MODE` | `false` | When true, prefer client sync path |
 | `EXPECTED_EMBEDDING_DIMENSIONS` | `768` | pgvector column size (was 1536 in Plan 03) |
+| `SUPERVISOR_MODE` | `off` | `llm` enables planner conditional rag/chat routing |
 
 ### Migrating from 1536 → 768 dimensions
 

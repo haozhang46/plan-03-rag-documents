@@ -102,6 +102,13 @@ uvicorn app.main:app --reload
 - **Checkpoint：** `CHECKPOINTER=auto`（无 Postgres 时退回 MemorySaver）；持久对话用 `postgres`。
 - **Skills 路径：** 默认仓库根目录 `skills/`，可用 `SKILLS_ROOT` 覆盖。
 
+### Supervisor planner (V2.1)
+
+- `SUPERVISOR_MODE=off` (default): linear `prepare → rag → chat`
+- `SUPERVISOR_MODE=llm`: `prepare → planner → (rag|chat) → …`
+- Planner uses structured LLM output; falls back to keyword heuristic on error
+- Expert subgraphs (`code`, Handoff) — Plan 06 follow-up
+
 ### Frontend (`fe/`)
 
 ```bash
