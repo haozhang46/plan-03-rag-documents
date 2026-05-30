@@ -78,7 +78,6 @@ async function onSend(text: string) {
     if (lastMsg?.role === "user") {
       updateTitle(threadId, text);
     }
-    documentIds.value = [];
   } catch (e) {
     addAssistantChunk(`Error: ${(e as Error).message}`);
   } finally {

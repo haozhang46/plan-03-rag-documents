@@ -8,6 +8,7 @@ export interface ChatRequest {
   thread_id: string;
   message: string;
   document_ids?: string[];
+  query_embedding?: number[];
 }
 
 export interface ChatResponseChunk {
