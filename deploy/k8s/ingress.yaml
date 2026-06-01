@@ -1,0 +1,25 @@
+# Requires an Ingress controller (e.g. nginx). Set host in deploy/helm/values.yaml.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: agent-flow-backend
+  namespace: agent-flow
+  labels:
+    app.kubernetes.io/name: agent-flow-backend
+    app.kubernetes.io/part-of: agent-flow
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: api.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: agent-flow-backend
+                port:
+                  number: 80

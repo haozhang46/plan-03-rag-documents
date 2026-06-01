@@ -1,0 +1,71 @@
+# Backs up Postgres via pg_dump. Requires postgres reachable at PGHOST.
+# Sync schedule with deploy/helm/values.yaml postgresBackup.schedule
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-backup
+  namespace: agent-flow
+  labels:
+    app.kubernetes.io/name: postgres-backup
+    app.kubernetes.io/part-of: agent-flow
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-backup
+  namespace: agent-flow
+  labels:
+    app.kubernetes.io/name: postgres-backup
+    app.kubernetes.io/part-of: agent-flow
+spec:
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: pg-dump
+              image: postgres:16
+              env:
+                - name: PGHOST
+                  value: postgres
+                - name: PGPORT
+                  value: "5432"
+                - name: PGUSER
+                  valueFrom:
+                    secretKeyRef:
+                      name: agent-flow-backend
+                      key: PGUSER
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: agent-flow-backend
+                      key: PGPASSWORD
+                - name: PGDATABASE
+                  value: agentflow
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  STAMP=$(date +%Y%m%d-%H%M%S)
+                  pg_dump -Fc -f /backup/agentflow-${STAMP}.dump
+                  find /backup -name 'agentflow-*.dump' -mtime +7 -delete
+              volumeMounts:
+                - name: backup
+                  mountPath: /backup
+          volumes:
+            - name: backup
+              persistentVolumeClaim:
+                claimName: postgres-backup

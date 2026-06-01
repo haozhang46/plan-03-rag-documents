@@ -1,0 +1,41 @@
+# Reference values for deploy/k8s/*.yaml — edit manifests or templating when adopting Helm fully.
+
+replicaCount: 2
+
+image:
+  repository: agent-flow/backend
+  tag: latest
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi
+
+ingress:
+  enabled: true
+  className: nginx
+  host: api.example.com
+
+postgresBackup:
+  enabled: true
+  schedule: "0 2 * * *"
+  retentionDays: 7
+  pgHost: postgres
+  pgPort: 5432
+  pgDatabase: agentflow
+  pgUser: agent
+  backupStorage: 10Gi
+
+# Non-secret runtime config (mirrored in backend-deployment.yaml env)
+checkpointer: postgres
+tenantMode: false
+rateLimitRpm: 60
+supervisorMode: off
+dispatchMode: sequential
+clientEmbeddingMode: true
+expectedEmbeddingDimensions: 768
+langfuseEnabled: false
