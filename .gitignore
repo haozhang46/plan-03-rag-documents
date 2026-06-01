@@ -13,6 +13,7 @@ __pycache__/
 venv/
 backend/.venv/
 backend/.pytest_cache/
+backend/.langgraph_api/
 .pytest_cache/
 htmlcov/
 .coverage
