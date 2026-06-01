@@ -19,6 +19,7 @@ def _planner_system_prompt(state: AgentState) -> str:
         "Choose next_agent:\n"
         "- rag: user question requires content from uploaded documents AND document_ids are present.\n"
         "- code: user wants Python code executed, calculations run, or numeric/script output.\n"
+        "- websearch: user needs current/real-time web information, news, or facts not in documents.\n"
         "- chat: general conversation, coding help without execution, or no documents attached.\n"
         "Never choose rag if document_ids is empty.\n\n"
         f"document_ids present: {bool(doc_ids)} ({len(doc_ids)} ids)\n\n"
@@ -51,6 +52,12 @@ def planner_node(state: AgentState) -> dict:
         return {
             "next_agent": "chat",
             "planner_reason": "code already completed; routing to chat",
+        }
+
+    if state.get("websearch_completed"):
+        return {
+            "next_agent": "chat",
+            "planner_reason": "websearch already completed; routing to chat",
         }
 
     if handoff := _workflow_handoff(state):
