@@ -4,6 +4,7 @@ skills:
     skill_type: instruction
     spawn_subagent: false
     path: test-driven-development/SKILL.md
+    visibility: public
     triggers:
       - tdd
       - test-driven
@@ -12,5 +13,6 @@ skills:
     skill_type: workflow
     spawn_subagent: true
     path: subagent-driven-development/SKILL.md
+    visibility: public
     triggers:
       - subagent

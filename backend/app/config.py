@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     summary_token_threshold: int = 4000
     tenant_mode: bool = False
     jwt_secret: str | None = None
+    rate_limit_rpm: int = 60
+    admin_api_key: str | None = None
 
 @lru_cache
 def get_settings() -> Settings:
