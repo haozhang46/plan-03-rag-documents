@@ -6,7 +6,8 @@ export default defineNuxtConfig({
   typescript: { strict: true },
   runtimeConfig: {
     public: {
-      apiBase: process.env.NUXT_PUBLIC_API_BASE || "http://localhost:8000",
+      // Dev: empty → relative /v1/* via Vite proxy; prod: set NUXT_PUBLIC_API_BASE
+      apiBase: process.env.NUXT_PUBLIC_API_BASE || "",
       ollamaBaseUrl:
         process.env.NUXT_PUBLIC_OLLAMA_BASE_URL || "http://localhost:11434",
       embeddingModel:
@@ -15,6 +16,14 @@ export default defineNuxtConfig({
     },
   },
   vite: {
+    server: {
+      proxy: {
+        "/v1": {
+          target: "http://localhost:8000",
+          changeOrigin: true,
+        },
+      },
+    },
     test: {
       environment: "happy-dom",
     },

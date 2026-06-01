@@ -117,7 +117,7 @@ done
 echo "==> Starting frontend on http://localhost:3000"
 (
   cd fe
-  export NUXT_PUBLIC_API_BASE="${NUXT_PUBLIC_API_BASE:-http://localhost:8000}"
+  export NUXT_PUBLIC_API_BASE="${NUXT_PUBLIC_API_BASE:-}"
   export NUXT_TELEMETRY_DISABLED=1
   export CI=true
   if command -v yarn >/dev/null 2>&1; then
