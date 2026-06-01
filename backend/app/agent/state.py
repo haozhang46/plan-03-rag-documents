@@ -2,6 +2,20 @@ from typing import Annotated, Literal, NotRequired, TypedDict
 
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
+from operator import add
+
+
+class Subtask(TypedDict):
+    id: str
+    agent: Literal["rag", "code", "chat"]
+    prompt: str
+
+
+class SubtaskResult(TypedDict):
+    id: str
+    agent: Literal["rag", "code", "chat"]
+    output: str
+    file_writes: NotRequired[list[str]]
 
 
 class AgentState(TypedDict):
@@ -19,3 +33,6 @@ class AgentState(TypedDict):
     skill_context: NotRequired[str]
     l3_context: NotRequired[str]
     summary: NotRequired[str]
+    subtasks: NotRequired[list[Subtask]]
+    subtask_results: NotRequired[Annotated[list[SubtaskResult], add]]
+    parallel_conflicts: NotRequired[list[str]]

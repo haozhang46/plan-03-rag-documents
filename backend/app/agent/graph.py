@@ -1,6 +1,7 @@
 from langgraph.graph import END, START, StateGraph
 
 from app.agent.graphs.code_agent import code_agent_node
+from app.agent.graphs.parallel import build_parallel_graph
 from app.agent.graphs.rag_agent import rag_agent_node
 from app.agent.nodes.chat import chat_node
 from app.agent.nodes.planner import planner_node
@@ -57,6 +58,9 @@ def _build_supervisor_graph(checkpointer=None):
 
 
 def build_graph(checkpointer=None):
-    if get_settings().supervisor_mode == "llm":
+    settings = get_settings()
+    if settings.dispatch_mode == "parallel":
+        return build_parallel_graph(checkpointer=checkpointer)
+    if settings.supervisor_mode == "llm":
         return _build_supervisor_graph(checkpointer=checkpointer)
     return _build_linear_graph(checkpointer=checkpointer)
