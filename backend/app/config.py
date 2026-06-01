@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     jwt_secret: str | None = None
     rate_limit_rpm: int = 60
     admin_api_key: str | None = None
+    web_search_provider: Literal["tavily", "mock"] = "mock"
+    tavily_api_key: str | None = None
+    web_search_max_results: int = 5
 
 @lru_cache
 def get_settings() -> Settings:
