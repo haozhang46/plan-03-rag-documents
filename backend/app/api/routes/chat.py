@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from app.auth.tenant import TenantDep
+from app.audit.store import write_audit
 from app.observability.langfuse import get_langfuse_client
 
 router = APIRouter(prefix="/v1")
@@ -57,6 +58,14 @@ async def chat(
     config = _build_config(request)
     state_input = _build_input(req)
     thread_config = {**config, "configurable": {**config.get("configurable", {}), "thread_id": req.thread_id}}
+
+    await write_audit(
+        request,
+        action="chat",
+        resource_type="thread",
+        resource_id=req.thread_id,
+        details={"message_length": len(req.message)},
+    )
 
     async def event_stream():
         client = get_langfuse_client()

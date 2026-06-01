@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.auth.tenant import TenantDep
+from app.audit.store import write_audit
 from app.rag.ingest import ingest_file
 
 router = APIRouter(prefix="/v1")
@@ -49,6 +50,13 @@ async def create_document(
         body.embedding_dimensions,
         tenant_id=tenant_id,
     )
+    await write_audit(
+        request,
+        action="create",
+        resource_type="document",
+        resource_id=doc_id,
+        details={"filename": body.filename},
+    )
     return {"document_id": doc_id}
 
 
@@ -69,6 +77,13 @@ async def upload_chunks(
         )
     except LookupError:
         raise HTTPException(status_code=404, detail="document not found")
+    await write_audit(
+        request,
+        action="upload_chunks",
+        resource_type="document",
+        resource_id=document_id,
+        details={"count": count},
+    )
     return {"ok": True, "count": count}
 
 
@@ -87,6 +102,13 @@ async def upload(
 
     try:
         doc_id = await ingest_file(store, file.filename or "upload", tmp_path)
+        await write_audit(
+            request,
+            action="upload",
+            resource_type="document",
+            resource_id=str(doc_id),
+            details={"filename": file.filename or "upload"},
+        )
         return {"document_id": str(doc_id)}
     finally:
         tmp_path.unlink(missing_ok=True)

@@ -43,8 +43,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 """
 
 
-def _tenant_migration_sql() -> str:
-    path = _MIGRATIONS_DIR / "002_tenant.sql"
+def _migration_sql(name: str) -> str:
+    path = _MIGRATIONS_DIR / name
     return path.read_text()
 
 
@@ -54,6 +54,7 @@ async def create_tables() -> None:
     try:
         await conn.execute(_tables_sql(settings.expected_embedding_dimensions))
         if settings.tenant_mode:
-            await conn.execute(_tenant_migration_sql())
+            await conn.execute(_migration_sql("002_tenant.sql"))
+        await conn.execute(_migration_sql("003_audit.sql"))
     finally:
         await conn.close()

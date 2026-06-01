@@ -6,6 +6,10 @@ from pathlib import Path
 
 _TIMEOUT_SECONDS = 5
 
+# Network isolation: in production, run subprocess inside a container or apply
+# seccomp-bpf to deny socket/connect syscalls. Pattern checks below block common
+# network imports as defense-in-depth when hardened=True.
+
 _UNSAFE_PATTERNS = (
     re.compile(r"\bos\.system\b"),
     re.compile(r"\bsubprocess\b"),
@@ -17,16 +21,31 @@ _UNSAFE_PATTERNS = (
     re.compile(r"open\s*\([^)]*['\"][wa][^'\"]*['\"]"),
 )
 
+_NETWORK_PATTERNS = (
+    re.compile(r"\bimport\s+socket\b"),
+    re.compile(r"\bfrom\s+socket\b"),
+    re.compile(r"\bimport\s+urllib\b"),
+    re.compile(r"\bfrom\s+urllib\b"),
+    re.compile(r"\bimport\s+requests\b"),
+    re.compile(r"\bfrom\s+requests\b"),
+    re.compile(r"\bimport\s+httpx\b"),
+    re.compile(r"\bfrom\s+httpx\b"),
+)
 
-def _check_safety(code: str) -> str | None:
+
+def _check_safety(code: str, *, hardened: bool = True) -> str | None:
     for pattern in _UNSAFE_PATTERNS:
         if pattern.search(code):
             return f"unsafe code rejected: matched {pattern.pattern}"
+    if hardened:
+        for pattern in _NETWORK_PATTERNS:
+            if pattern.search(code):
+                return f"network access rejected: matched {pattern.pattern}"
     return None
 
 
-def run_python(code: str) -> dict:
-    safety_error = _check_safety(code)
+def run_python(code: str, *, hardened: bool = True) -> dict:
+    safety_error = _check_safety(code, hardened=hardened)
     if safety_error:
         return {
             "stdout": "",

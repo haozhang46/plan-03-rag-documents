@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from app.auth.tenant import TenantDep
+from app.audit.store import write_audit
 
 router = APIRouter(prefix="/v1")
 
@@ -49,6 +50,13 @@ async def create_session(
     record = await store.create(
         title=body.title, thread_id=body.thread_id, tenant_id=tenant_id
     )
+    await write_audit(
+        request,
+        action="create",
+        resource_type="session",
+        resource_id=record.id,
+        details={"title": record.title},
+    )
     return SessionOut(**record.to_dict())
 
 
@@ -59,6 +67,12 @@ async def delete_session(
     store = _get_store(request)
     if not await store.delete(session_id, tenant_id=tenant_id):
         raise HTTPException(status_code=404, detail="session not found")
+    await write_audit(
+        request,
+        action="delete",
+        resource_type="session",
+        resource_id=session_id,
+    )
 
 
 @router.patch("/sessions/{session_id}", response_model=SessionOut)
@@ -77,4 +91,11 @@ async def update_session(
     )
     if not record:
         raise HTTPException(status_code=404, detail="session not found")
+    await write_audit(
+        request,
+        action="update",
+        resource_type="session",
+        resource_id=session_id,
+        details={"title": body.title, "starred": body.starred},
+    )
     return SessionOut(**record.to_dict())
