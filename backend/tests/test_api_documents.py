@@ -79,6 +79,7 @@ def test_create_document_meta(client_with_store):
         "text/markdown",
         "nomic-embed-text",
         768,
+        tenant_id=None,
     )
 
 

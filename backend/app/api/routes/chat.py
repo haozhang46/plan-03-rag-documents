@@ -5,6 +5,7 @@ from langchain_core.messages import HumanMessage
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
+from app.auth.tenant import TenantDep
 from app.observability.langfuse import get_langfuse_client
 
 router = APIRouter(prefix="/v1")
@@ -49,7 +50,9 @@ async def _stream_tokens(graph, state_input, config):
 
 
 @router.post("/chat")
-async def chat(req: ChatRequest, request: Request) -> EventSourceResponse:
+async def chat(
+    req: ChatRequest, request: Request, tenant_id: TenantDep
+) -> EventSourceResponse:
     graph = request.app.state.graph
     config = _build_config(request)
     state_input = _build_input(req)

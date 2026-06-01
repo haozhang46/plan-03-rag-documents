@@ -1,6 +1,10 @@
+from pathlib import Path
+
 import asyncpg
 
 from app.config import get_settings
+
+_MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "migrations"
 
 
 def _tables_sql(dim: int) -> str:
@@ -39,10 +43,17 @@ CREATE TABLE IF NOT EXISTS sessions (
 """
 
 
+def _tenant_migration_sql() -> str:
+    path = _MIGRATIONS_DIR / "002_tenant.sql"
+    return path.read_text()
+
+
 async def create_tables() -> None:
     settings = get_settings()
     conn = await asyncpg.connect(settings.database_url)
     try:
         await conn.execute(_tables_sql(settings.expected_embedding_dimensions))
+        if settings.tenant_mode:
+            await conn.execute(_tenant_migration_sql())
     finally:
         await conn.close()

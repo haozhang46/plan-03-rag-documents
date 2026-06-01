@@ -1,10 +1,11 @@
 import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, Request, UploadFile
+from fastapi import APIRouter, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from app.auth.tenant import TenantDep
 from app.rag.ingest import ingest_file
 
 router = APIRouter(prefix="/v1")
@@ -35,7 +36,9 @@ def _store_unavailable() -> JSONResponse:
 
 
 @router.post("/documents")
-async def create_document(body: CreateDocumentRequest, request: Request):
+async def create_document(
+    body: CreateDocumentRequest, request: Request, tenant_id: TenantDep
+):
     store = getattr(request.app.state, "store", None)
     if store is None:
         return _store_unavailable()
@@ -44,24 +47,35 @@ async def create_document(body: CreateDocumentRequest, request: Request):
         body.content_type,
         body.embedding_model,
         body.embedding_dimensions,
+        tenant_id=tenant_id,
     )
     return {"document_id": doc_id}
 
 
 @router.post("/documents/{document_id}/chunks")
 async def upload_chunks(
-    document_id: str, body: AddChunksRequest, request: Request
+    document_id: str,
+    body: AddChunksRequest,
+    request: Request,
+    tenant_id: TenantDep,
 ):
     store = getattr(request.app.state, "store", None)
     if store is None:
         return _store_unavailable()
     rows = [c.model_dump() for c in body.chunks]
-    count = await store.add_chunks_precomputed(document_id, rows)
+    try:
+        count = await store.add_chunks_precomputed(
+            document_id, rows, tenant_id=tenant_id
+        )
+    except LookupError:
+        raise HTTPException(status_code=404, detail="document not found")
     return {"ok": True, "count": count}
 
 
 @router.post("/documents/upload")
-async def upload(file: UploadFile, request: Request):
+async def upload(
+    file: UploadFile, request: Request, tenant_id: TenantDep
+):
     store = getattr(request.app.state, "store", None)
     if store is None:
         return _store_unavailable()

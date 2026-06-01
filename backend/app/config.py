@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     dispatch_mode: Literal["sequential", "parallel"] = "sequential"
     review_mode: Literal["off", "on"] = "off"
     summary_token_threshold: int = 4000
+    tenant_mode: bool = False
+    jwt_secret: str | None = None
 
 @lru_cache
 def get_settings() -> Settings:
