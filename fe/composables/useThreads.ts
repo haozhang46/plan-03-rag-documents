@@ -1,5 +1,6 @@
 import { ref } from "vue";
 import type { Thread } from "~/types";
+import { useSessions } from "./useSessions";
 
 export function useThreads() {
   const threads = ref<Thread[]>([]);
