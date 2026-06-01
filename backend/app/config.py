@@ -9,7 +9,9 @@ _DEFAULT_SKILLS_ROOT = _REPO_ROOT / "skills"
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=str(_REPO_ROOT / ".env"), extra="ignore"
+    )
 
     app_name: str = "agent-flow"
     database_url: str = "postgresql://agent:agent@localhost:5432/agentflow"
@@ -17,6 +19,8 @@ class Settings(BaseSettings):
     checkpointer: str = "auto"
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None
+    deepseek_api_key: str | None = None
+    deepseek_base_url: str = "https://api.deepseek.com/v1"
     default_llm_provider: str = "openai"
     default_model: str = "gpt-4o-mini"
     embedding_provider: str = "openai"

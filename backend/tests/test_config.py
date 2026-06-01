@@ -28,3 +28,13 @@ def test_settings_client_embedding_defaults():
     )
     assert s.expected_embedding_dimensions == 768
     assert s.client_embedding_mode is False
+
+
+def test_settings_deepseek_defaults():
+    s = Settings(
+        _env_file=None,
+        openai_api_key=None,
+        anthropic_api_key=None,
+    )
+    assert s.deepseek_base_url == "https://api.deepseek.com/v1"
+    assert s.default_llm_provider == "openai"

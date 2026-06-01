@@ -104,6 +104,16 @@ curl -N -X POST http://localhost:8000/v1/chat \
 
 With `SUPERVISOR_MODE=llm`, RAG runs only when the planner routes to `rag` (typically when `document_ids` are present and the question needs document content). With `SUPERVISOR_MODE=off` (default), the graph always runs `prepare → rag → chat`.
 
+### DeepSeek
+
+```env
+DEEPSEEK_API_KEY=sk-...
+DEFAULT_LLM_PROVIDER=deepseek
+DEFAULT_MODEL=deepseek-chat
+```
+
+Models: `deepseek-chat` (general), `deepseek-reasoner` (reasoning). RAG embeddings still require `OPENAI_API_KEY` or client-side Ollama sync.
+
 ### Config
 
 | Variable | Default | Description |
