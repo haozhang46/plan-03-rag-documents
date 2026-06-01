@@ -7,13 +7,13 @@ from operator import add
 
 class Subtask(TypedDict):
     id: str
-    agent: Literal["rag", "code", "chat"]
+    agent: Literal["rag", "code", "chat", "websearch"]
     prompt: str
 
 
 class SubtaskResult(TypedDict):
     id: str
-    agent: Literal["rag", "code", "chat"]
+    agent: Literal["rag", "code", "chat", "websearch"]
     output: str
     file_writes: NotRequired[list[str]]
 
@@ -23,9 +23,11 @@ class AgentState(TypedDict):
     document_ids: NotRequired[list[str]]
     citations: NotRequired[list[str]]
     query_embedding: NotRequired[list[float]]
-    next_agent: NotRequired[Literal["rag", "chat", "code"]]
+    next_agent: NotRequired[Literal["rag", "chat", "code", "websearch"]]
     planner_reason: NotRequired[str]
     rag_completed: NotRequired[bool]
+    websearch_completed: NotRequired[bool]
+    web_search_results: NotRequired[list[dict]]
     code_snippet: NotRequired[str]
     code_completed: NotRequired[bool]
     code_error: NotRequired[str]
