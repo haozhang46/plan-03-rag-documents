@@ -36,3 +36,6 @@ class AgentState(TypedDict):
     subtasks: NotRequired[list[Subtask]]
     subtask_results: NotRequired[Annotated[list[SubtaskResult], add]]
     parallel_conflicts: NotRequired[list[str]]
+    review_feedback: NotRequired[str]
+    review_passed: NotRequired[bool]
+    review_attempts: NotRequired[int]

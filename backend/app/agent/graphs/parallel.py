@@ -2,6 +2,11 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
+from app.agent.graphs.reviewer import (
+    increment_review_attempts_node,
+    reviewer_node,
+    route_after_reviewer,
+)
 from app.agent.state import AgentState, Subtask, SubtaskResult
 from app.observability.langfuse import get_langfuse_client
 
@@ -126,10 +131,18 @@ def build_parallel_graph(checkpointer=None):
     graph.add_node("code_worker", code_worker)
     graph.add_node("chat_worker", chat_worker)
     graph.add_node("reduce_results", reduce_results_node)
+    graph.add_node("reviewer", reviewer_node)
+    graph.add_node("increment_review_attempts", increment_review_attempts_node)
     graph.add_edge(START, "dispatch")
     graph.add_conditional_edges("dispatch", dispatch_node)
     graph.add_edge("rag_worker", "reduce_results")
     graph.add_edge("code_worker", "reduce_results")
     graph.add_edge("chat_worker", "reduce_results")
-    graph.add_edge("reduce_results", END)
+    graph.add_edge("reduce_results", "reviewer")
+    graph.add_conditional_edges(
+        "reviewer",
+        route_after_reviewer,
+        {"dispatch": "increment_review_attempts", "__end__": END},
+    )
+    graph.add_edge("increment_review_attempts", "dispatch")
     return graph.compile(checkpointer=checkpointer)

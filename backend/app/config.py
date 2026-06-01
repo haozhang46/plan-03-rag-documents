@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     client_embedding_mode: bool = False
     supervisor_mode: Literal["off", "llm"] = "off"
     dispatch_mode: Literal["sequential", "parallel"] = "sequential"
+    review_mode: Literal["off", "on"] = "off"
     summary_token_threshold: int = 4000
 
 @lru_cache
