@@ -37,6 +37,14 @@ def test_heuristic_chat_when_citations_present():
     assert heuristic_next_agent(state) == "chat"
 
 
+def test_heuristic_chat_for_weather_query_without_docs():
+    state = {
+        "messages": [HumanMessage(content="查询今天天气")],
+        "document_ids": [],
+    }
+    assert heuristic_next_agent(state) == "chat"
+
+
 def test_route_after_planner_uses_state_next_agent():
     state = {"next_agent": "chat"}
     assert route_after_planner(state) == "chat"

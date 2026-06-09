@@ -1,3 +1,24 @@
+export interface FlowInfo {
+  flow_id: string;
+  title: string;
+  description: string;
+  default_skill_names?: string[];
+}
+
+export interface SkillInfo {
+  name: string;
+  description: string;
+}
+
+export interface RagDocument {
+  document_id: string;
+  filename: string;
+  content_type?: string;
+  embedding_model?: string;
+  embedding_dimensions?: number;
+  created_at?: string;
+}
+
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
@@ -5,8 +26,10 @@ export interface ChatMessage {
 }
 
 export interface ChatRequest {
+  flow_id?: string;
   thread_id: string;
   message: string;
+  skill_names?: string[];
   document_ids?: string[];
   query_embedding?: number[];
 }

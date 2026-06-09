@@ -87,6 +87,35 @@ async def upload_chunks(
     return {"ok": True, "count": count}
 
 
+@router.get("/documents")
+async def list_documents(request: Request, tenant_id: TenantDep):
+    store = getattr(request.app.state, "store", None)
+    if store is None:
+        return _store_unavailable()
+    docs = await store.list_documents(tenant_id=tenant_id)
+    return {"documents": docs}
+
+
+@router.delete("/documents/{document_id}")
+async def delete_document(
+    document_id: str, request: Request, tenant_id: TenantDep
+):
+    store = getattr(request.app.state, "store", None)
+    if store is None:
+        return _store_unavailable()
+    deleted = await store.delete_document(document_id, tenant_id=tenant_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="document not found")
+    await write_audit(
+        request,
+        action="delete",
+        resource_type="document",
+        resource_id=document_id,
+        details={},
+    )
+    return {"ok": True}
+
+
 @router.post("/documents/upload")
 async def upload(
     file: UploadFile, request: Request, tenant_id: TenantDep

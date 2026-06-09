@@ -114,6 +114,12 @@ DEFAULT_MODEL=deepseek-chat
 
 Models: `deepseek-chat` (general), `deepseek-reasoner` (reasoning). RAG embeddings still require `OPENAI_API_KEY` or client-side Ollama sync.
 
+Supervisor topology:
+
+```text
+prepare → route ⇄ rag | code → chat → END
+```
+
 ### Config
 
 | Variable | Default | Description |
@@ -132,3 +138,37 @@ docker compose up -d db
 ```
 
 For brownfield upgrades, run `backend/migrations/002_client_embeddings.sql` manually to add metadata columns.
+
+## Multi-flow Agent API (external apps)
+
+This service is an **Agent Runtime** for other applications. Use HTTP only; the Nuxt `fe/` app is a debug console.
+
+### List flows
+
+```bash
+curl http://localhost:8000/v1/flows
+```
+
+### Chat with a specific flow
+
+```bash
+curl -N -X POST http://localhost:8000/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "flow_id": "knowledge-rag",
+    "thread_id": "my-app-session-1",
+    "message": "Summarize the uploaded notes",
+    "document_ids": ["<document-uuid>"],
+    "skill_names": ["test-driven-development"]
+  }'
+```
+
+- `flow_id` — registered flow (`default`, `linear-rag`, `supervisor`, `parallel`, `knowledge-rag`). Defaults to `default`.
+- `thread_id` — your app's session id. Checkpoint key is `{flow_id}:{thread_id}`.
+- `skill_names` — optional; when non-empty, overrides flow defaults and auto skill routing.
+
+### Knowledge app pattern
+
+1. Sync local Markdown: `POST /v1/documents` + `POST /v1/documents/{id}/chunks` (client embeddings) or `POST /v1/documents/upload`.
+2. Chat with `flow_id: "knowledge-rag"` and `document_ids` from step 1.
+3. Optionally pass `query_embedding` from client Ollama for vector search.

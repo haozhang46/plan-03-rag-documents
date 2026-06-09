@@ -13,6 +13,7 @@ def test_estimate_tokens_counts_chars_div_4():
 
 def test_summarize_not_triggered_below_threshold(monkeypatch):
     monkeypatch.setenv("SUMMARY_TOKEN_THRESHOLD", "10000")
+    monkeypatch.setenv("SUPERVISOR_MODE", "off")
     from app.config import get_settings
 
     get_settings.cache_clear()

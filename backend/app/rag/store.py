@@ -122,6 +122,61 @@ class DocumentStore:
         finally:
             await conn.close()
 
+    async def list_documents(
+        self, tenant_id: str | None = None
+    ) -> list[dict]:
+        conn = await self._connect(tenant_id)
+        try:
+            if tenant_id and get_settings().tenant_mode:
+                rows = await conn.fetch(
+                    "SELECT id, filename, content_type, embedding_model, "
+                    "embedding_dimensions, created_at "
+                    "FROM documents WHERE tenant_id = $1 "
+                    "ORDER BY created_at DESC",
+                    tenant_id,
+                )
+            else:
+                rows = await conn.fetch(
+                    "SELECT id, filename, content_type, embedding_model, "
+                    "embedding_dimensions, created_at "
+                    "FROM documents ORDER BY created_at DESC"
+                )
+            return [
+                {
+                    "document_id": str(r["id"]),
+                    "filename": r["filename"],
+                    "content_type": r.get("content_type"),
+                    "embedding_model": r.get("embedding_model"),
+                    "embedding_dimensions": r.get("embedding_dimensions"),
+                    "created_at": (
+                        r["created_at"].isoformat() if r["created_at"] else None
+                    ),
+                }
+                for r in rows
+            ]
+        finally:
+            await conn.close()
+
+    async def delete_document(
+        self, doc_id: str, tenant_id: str | None = None
+    ) -> bool:
+        conn = await self._connect(tenant_id)
+        try:
+            if tenant_id and get_settings().tenant_mode:
+                result = await conn.execute(
+                    "DELETE FROM documents WHERE id = $1::uuid AND tenant_id = $2",
+                    doc_id,
+                    tenant_id,
+                )
+            else:
+                result = await conn.execute(
+                    "DELETE FROM documents WHERE id = $1::uuid",
+                    doc_id,
+                )
+            return result != "DELETE 0"
+        finally:
+            await conn.close()
+
     async def document_exists(
         self, doc_id: str, tenant_id: str | None = None
     ) -> bool:
@@ -305,6 +360,35 @@ class MemoryDocumentStore:
         }
         self._chunks[doc_id] = []
         return doc_id
+
+    async def list_documents(
+        self, tenant_id: str | None = None
+    ) -> list[dict]:
+        docs: list[dict] = []
+        for doc_id, meta in self._documents.items():
+            if tenant_id and get_settings().tenant_mode:
+                if meta["tenant_id"] != tenant_id:
+                    continue
+            docs.append(
+                {
+                    "document_id": doc_id,
+                    "filename": meta["filename"],
+                    "content_type": meta.get("content_type"),
+                    "embedding_model": meta.get("embedding_model"),
+                    "embedding_dimensions": meta.get("embedding_dimensions"),
+                    "created_at": meta.get("created_at"),
+                }
+            )
+        return docs
+
+    async def delete_document(
+        self, doc_id: str, tenant_id: str | None = None
+    ) -> bool:
+        if not await self.document_exists(doc_id, tenant_id):
+            return False
+        del self._documents[doc_id]
+        self._chunks.pop(doc_id, None)
+        return True
 
     async def document_exists(
         self, doc_id: str, tenant_id: str | None = None

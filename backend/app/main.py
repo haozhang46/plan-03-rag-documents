@@ -7,7 +7,8 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from app.agent.graph import build_graph
-from app.api.routes import chat, documents, health, sessions, skills
+from app.flows.registry import GraphRegistry
+from app.api.routes import chat, documents, flows, health, sessions, skills
 from app.audit.store import MemoryAuditStore, PostgresAuditStore
 from app.config import get_settings
 from app.middleware.rate_limit import RateLimitMiddleware, reset_rate_limiter
@@ -24,7 +25,9 @@ async def lifespan(app: FastAPI):
     mode = settings.checkpointer.lower()
 
     if mode == "memory":
-        app.state.graph = build_graph(checkpointer=MemorySaver())
+        registry = GraphRegistry.load_all(checkpointer=MemorySaver())
+        app.state.graph_registry = registry
+        app.state.graph = registry.get("default")
         app.state.session_store = MemorySessionStore()
         app.state.audit_store = MemoryAuditStore()
         logger.info("Checkpointer: MemorySaver (in-process, dev only)")
@@ -37,7 +40,9 @@ async def lifespan(app: FastAPI):
                 settings.database_url
             ) as checkpointer:
                 await checkpointer.setup()
-                app.state.graph = build_graph(checkpointer=checkpointer)
+                registry = GraphRegistry.load_all(checkpointer=checkpointer)
+                app.state.graph_registry = registry
+                app.state.graph = registry.get("default")
                 await create_tables()
                 app.state.store = DocumentStore()
                 app.state.session_store = PostgresSessionStore()
@@ -54,7 +59,9 @@ async def lifespan(app: FastAPI):
                 exc,
             )
 
-    app.state.graph = build_graph(checkpointer=MemorySaver())
+    registry = GraphRegistry.load_all(checkpointer=MemorySaver())
+    app.state.graph_registry = registry
+    app.state.graph = registry.get("default")
     app.state.session_store = MemorySessionStore()
     app.state.audit_store = MemoryAuditStore()
     yield
@@ -76,6 +83,7 @@ app.add_middleware(
 )
 app.include_router(health.router)
 app.include_router(chat.router)
+app.include_router(flows.router)
 app.include_router(documents.router)
 app.include_router(sessions.router)
 app.include_router(skills.router)

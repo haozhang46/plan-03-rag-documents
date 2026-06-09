@@ -6,18 +6,32 @@ export function useChat() {
   async function* streamChat(
     threadId: string,
     message: string,
-    documentIds?: string[],
-    queryEmbedding?: number[],
+    options?: {
+      flowId?: string;
+      skillNames?: string[];
+      documentIds?: string[];
+      queryEmbedding?: number[];
+    },
   ): AsyncGenerator<ChatResponseChunk> {
+    const body: Record<string, unknown> = {
+      flow_id: options?.flowId ?? "default",
+      thread_id: threadId,
+      message,
+    };
+    if (options?.skillNames?.length) {
+      body.skill_names = options.skillNames;
+    }
+    if (options?.documentIds?.length) {
+      body.document_ids = options.documentIds;
+    }
+    if (options?.queryEmbedding) {
+      body.query_embedding = options.queryEmbedding;
+    }
+
     const res = await fetch(`${config.public.apiBase}/v1/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        thread_id: threadId,
-        message,
-        document_ids: documentIds,
-        query_embedding: queryEmbedding,
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!res.ok || !res.body) {

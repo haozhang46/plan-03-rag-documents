@@ -120,3 +120,49 @@ def test_upload_chunks_returns_503_without_store(client):
     )
     assert resp.status_code == 503
     assert "unavailable" in resp.json()["detail"]
+
+
+def test_list_documents(client_with_store):
+    client, store = client_with_store
+    store.list_documents = AsyncMock(
+        return_value=[
+            {
+                "document_id": "doc-uuid-1",
+                "filename": "notes.md",
+                "content_type": "text/markdown",
+                "embedding_model": "nomic-embed-text",
+                "embedding_dimensions": 768,
+                "created_at": "2026-05-28T00:00:00+00:00",
+            }
+        ]
+    )
+    resp = client.get("/v1/documents")
+    assert resp.status_code == 200
+    assert resp.json()["documents"][0]["filename"] == "notes.md"
+    store.list_documents.assert_awaited_once()
+
+
+def test_list_documents_returns_503_without_store(client):
+    resp = client.get("/v1/documents")
+    assert resp.status_code == 503
+
+
+def test_delete_document(client_with_store):
+    client, store = client_with_store
+    store.delete_document = AsyncMock(return_value=True)
+    resp = client.delete("/v1/documents/doc-uuid-1")
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+    store.delete_document.assert_awaited_once_with("doc-uuid-1", tenant_id=None)
+
+
+def test_delete_document_not_found(client_with_store):
+    client, store = client_with_store
+    store.delete_document = AsyncMock(return_value=False)
+    resp = client.delete("/v1/documents/missing")
+    assert resp.status_code == 404
+
+
+def test_delete_document_returns_503_without_store(client):
+    resp = client.delete("/v1/documents/doc-uuid-1")
+    assert resp.status_code == 503

@@ -14,20 +14,6 @@ _CODE_KEYWORDS = (
 )
 
 
-_WEBSEARCH_KEYWORDS = (
-    "search",
-    "latest",
-    "news",
-    "current",
-    "today",
-    "weather",
-    "搜索",
-    "联网",
-    "查一下",
-    "最新",
-)
-
-
 _DOC_KEYWORDS = (
     "document",
     "file",
@@ -56,15 +42,11 @@ def heuristic_next_agent(state: AgentState) -> NextAgent:
         return "chat"
     if state.get("code_completed"):
         return "chat"
-    if state.get("websearch_completed"):
-        return "chat"
     text = _last_human_content(state).lower()
     if any(k in text for k in _CODE_KEYWORDS):
         return "code"
     ids = state.get("document_ids") or []
     if not ids:
-        if any(k in text for k in _WEBSEARCH_KEYWORDS):
-            return "websearch"
         return "chat"
     if any(k in text for k in _DOC_KEYWORDS):
         return "rag"
@@ -75,12 +57,12 @@ def route_after_prepare(state: AgentState) -> str:
     if needs_summarize(state):
         return "summarize"
     if get_settings().supervisor_mode == "llm":
-        return "planner"
+        return "route"
     return "rag"
 
 
 def route_after_planner(state: AgentState) -> NextAgent:
     explicit = state.get("next_agent")
-    if explicit in ("rag", "chat", "code", "websearch"):
+    if explicit in ("rag", "chat", "code"):
         return explicit
     return heuristic_next_agent(state)

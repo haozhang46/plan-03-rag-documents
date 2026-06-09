@@ -93,5 +93,5 @@ def route_after_reviewer(state: AgentState) -> Literal["dispatch", "__end__"]:
     return "dispatch"
 
 
-def route_after_reviewer_supervisor(state: AgentState) -> Literal["planner"]:
-    return "planner"
+def route_after_reviewer_supervisor(state: AgentState) -> Literal["route"]:
+    return "route"

@@ -2,10 +2,19 @@
   <div class="flex h-full">
     <!-- sidebar -->
     <aside class="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col flex-shrink-0">
+      <DebugToolbar
+        :flows="flows"
+        :flow-id="flowId"
+        :skills="skills"
+        :selected-names="selectedSkillNames"
+        :error="flowsError || skillsError"
+        @flow-change="saveFlowId"
+        @toggle-skill="toggleSkill"
+      />
       <div class="p-4 border-b border-gray-200 dark:border-gray-700">
         <button class="btn-primary w-full" @click="newChat">+ New Chat</button>
       </div>
-      <div class="flex-1 overflow-y-auto">
+      <div class="flex-1 overflow-y-auto min-h-0">
         <div
           v-for="t in threads"
           :key="t.id"
@@ -35,6 +44,22 @@
           </button>
         </div>
       </div>
+
+      <RagDocumentPanel
+        :documents="documents"
+        :selected-ids="selectedIds"
+        :loading="docsLoading"
+        :uploading="docsUploading"
+        :error="docsError"
+        :embedding-model="String(config.public.embeddingModel)"
+        :embedding-dimensions="Number(config.public.embeddingDimensions)"
+        @refresh="refreshDocuments"
+        @upload="onUploadDocument"
+        @remove="onRemoveDocument"
+        @toggle-selected="toggleSelected"
+        @select-all="selectAll"
+        @clear-selection="clearSelection"
+      />
     </aside>
 
     <!-- chat area -->
@@ -43,8 +68,13 @@
         <ChatMessage v-for="(msg, i) in messages" :key="i" :msg="msg" />
         <div v-if="loading" class="text-gray-400 text-sm">Thinking...</div>
       </div>
-      <div class="flex items-center gap-2 px-4 py-2 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-        <DocumentUpload @uploaded="onDocumentUploaded" />
+      <div
+        v-if="selectedIds.length || selectedSkillNames.length"
+        class="px-4 py-1.5 text-xs text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-950 border-t border-green-200 dark:border-green-800"
+      >
+        <span v-if="flowId">flow: {{ flowId }}</span>
+        <span v-if="selectedIds.length"> · RAG {{ selectedIds.length }} 文件</span>
+        <span v-if="selectedSkillNames.length"> · skills {{ selectedSkillNames.length }}</span>
       </div>
       <ChatInput :loading="loading" @send="onSend" />
     </main>
@@ -52,24 +82,49 @@
 </template>
 
 <script setup lang="ts">
+const config = useRuntimeConfig();
 const { threads, activeThreadId, create, updateTitle, remove, toggleStar, load } =
   useThreads();
 const { messages, loading, addUserMessage, addAssistantChunk } = useMessages(activeThreadId);
 const { streamChat, embedQuery } = useChat();
+const {
+  flows,
+  flowId,
+  error: flowsError,
+  refresh: refreshFlows,
+  saveFlowId,
+} = useFlows();
+const {
+  skills,
+  selectedNames: selectedSkillNames,
+  error: skillsError,
+  refresh: refreshSkills,
+  toggle: toggleSkill,
+} = useSkillsPicker();
+const {
+  documents,
+  selectedIds,
+  loading: docsLoading,
+  uploading: docsUploading,
+  error: docsError,
+  refresh: refreshDocuments,
+  uploadFile,
+  removeDocument,
+  toggleSelected,
+  selectAll,
+  clearSelection,
+} = useDocuments(activeThreadId);
 
-const documentIds = ref<string[]>([]);
-
-onMounted(() => {
-  load();
+onMounted(async () => {
+  await load();
+  await Promise.all([refreshFlows(), refreshSkills(), refreshDocuments()]);
 });
 
 async function newChat() {
-  documentIds.value = [];
   await create();
 }
 
 function selectThread(id: string) {
-  documentIds.value = [];
   activeThreadId.value = id;
 }
 
@@ -77,8 +132,20 @@ async function deleteThread(id: string) {
   await remove(id);
 }
 
-function onDocumentUploaded(id: string) {
-  documentIds.value.push(id);
+async function onUploadDocument(file: File) {
+  try {
+    await uploadFile(file);
+  } catch {
+    // error surfaced via docsError
+  }
+}
+
+async function onRemoveDocument(id: string) {
+  try {
+    await removeDocument(id);
+  } catch {
+    // error surfaced via docsError
+  }
 }
 
 async function onSend(text: string) {
@@ -88,15 +155,18 @@ async function onSend(text: string) {
   loading.value = true;
 
   try {
-    const queryEmbedding = documentIds.value.length
+    const activeDocIds = selectedIds.value;
+    const queryEmbedding = activeDocIds.length
       ? await embedQuery(text)
       : undefined;
-    const gen = streamChat(
-      threadId,
-      text,
-      documentIds.value.length ? documentIds.value : undefined,
+    const gen = streamChat(threadId, text, {
+      flowId: flowId.value,
+      skillNames: selectedSkillNames.value.length
+        ? selectedSkillNames.value
+        : undefined,
+      documentIds: activeDocIds.length ? activeDocIds : undefined,
       queryEmbedding,
-    );
+    });
     for await (const chunk of gen) {
       if (chunk.content) {
         addAssistantChunk(chunk.content, chunk.citations);

@@ -67,7 +67,7 @@ async def test_supervisor_routes_code_to_subgraph_then_planner(
         return original_planner(state)
 
     monkeypatch.setattr(planner_mod, "planner_node", _counting_planner)
-    monkeypatch.setattr("app.agent.graph.planner_node", _counting_planner)
+    monkeypatch.setattr("app.agent.graph.route_agent_node", _counting_planner)
 
     class _FakeStructured:
         def invoke(self, _messages):

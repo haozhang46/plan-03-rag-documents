@@ -2,7 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-NextAgent = Literal["rag", "chat", "code", "websearch"]
+NextAgent = Literal["rag", "chat", "code"]
 
 
 class RouterOutput(BaseModel):
@@ -10,7 +10,6 @@ class RouterOutput(BaseModel):
         description=(
             "Use rag when user question needs uploaded documents; "
             "code when user wants Python executed or a calculation run; "
-            "websearch when user needs current/real-time web info, news, or facts not in documents; "
             "otherwise chat."
         )
     )

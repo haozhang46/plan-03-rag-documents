@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 from langgraph.checkpoint.memory import MemorySaver
 from unittest.mock import AsyncMock, MagicMock
 
-from app.agent.graph import build_graph
+from app.flows.registry import GraphRegistry
 from app.agent.tools.run_python import run_python
 from app.api.routes import chat, documents, sessions
 from app.audit.store import MemoryAuditStore
@@ -14,7 +14,9 @@ from app.sessions.store import MemorySessionStore
 @pytest.fixture
 def audit_app():
     app = FastAPI()
-    app.state.graph = build_graph(checkpointer=MemorySaver())
+    registry = GraphRegistry.load_all(checkpointer=MemorySaver())
+    app.state.graph_registry = registry
+    app.state.graph = registry.get("default")
     app.state.session_store = MemorySessionStore()
     app.state.audit_store = MemoryAuditStore()
     app.include_router(sessions.router)
