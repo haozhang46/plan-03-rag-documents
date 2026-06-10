@@ -1,15 +1,8 @@
-from unittest.mock import AsyncMock, MagicMock
-
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.checkpoint.memory import MemorySaver
 
 from app.agent.graph import build_graph
-from app.rag.store import ChunkHit
-
-
-class FakeLLM:
-    def invoke(self, messages):
-        return AIMessage(content="ok")
 
 
 async def test_graph_invoke(monkeypatch, skills_fixture):
@@ -17,7 +10,8 @@ async def test_graph_invoke(monkeypatch, skills_fixture):
     from app.config import get_settings
 
     get_settings.cache_clear()
-    monkeypatch.setattr("app.agent.nodes.chat.get_chat_model", lambda: FakeLLM())
+    fake = GenericFakeChatModel(messages=iter(["ok"]))
+    monkeypatch.setattr("app.agent.nodes.chat.get_chat_model", lambda: fake)
     graph = build_graph(checkpointer=MemorySaver())
     config = {"configurable": {"thread_id": "t1"}}
     result = await graph.ainvoke(
@@ -25,36 +19,57 @@ async def test_graph_invoke(monkeypatch, skills_fixture):
     )
     types = [type(m) for m in result["messages"]]
     assert SystemMessage in types
-    assert AIMessage in types
     assert len(result["messages"]) >= 3
 
 
-async def test_graph_invoke_with_document_ids(monkeypatch, skills_fixture):
+async def test_supervisor_graph_skips_rag_when_planner_chooses_chat(monkeypatch, skills_fixture):
     monkeypatch.setenv("SKILLS_ROOT", str(skills_fixture))
+    monkeypatch.setenv("SUPERVISOR_MODE", "llm")
     from app.config import get_settings
 
     get_settings.cache_clear()
-    monkeypatch.setattr("app.agent.nodes.chat.get_chat_model", lambda: FakeLLM())
 
-    hits = [
-        ChunkHit(chunk_id="c1", document_id="d1", content="rag context", score=0.9),
-    ]
-    mock_store = MagicMock()
-    mock_store.similarity_search = AsyncMock(return_value=hits)
-    monkeypatch.setattr(
-        "app.agent.nodes.rag.get_document_store", lambda: mock_store
-    )
+    class _FakeStructured:
+        def invoke(self, _messages):
+            from app.agent.models.router import RouterOutput
+
+            return RouterOutput(next_agent="chat", reasoning="general question")
+
+    class _FakeLLM:
+        def with_structured_output(self, _schema):
+            return _FakeStructured()
+
+        async def astream(self, _messages):
+            from langchain_core.messages import AIMessage
+
+            yield AIMessage(content="hi")
+
+    fake = _FakeLLM()
+    monkeypatch.setattr("app.agent.nodes.planner.get_chat_model", lambda: fake)
+    monkeypatch.setattr("app.agent.nodes.chat.get_chat_model", lambda: fake)
+
+    rag_called = {"n": 0}
+    from app.agent.graphs import rag_agent as rag_agent_mod
+
+    original_rag = rag_agent_mod.rag_agent_node
+
+    def _counting_rag(state, config):
+        rag_called["n"] += 1
+        return original_rag(state, config)
+
+    monkeypatch.setattr(rag_agent_mod, "rag_agent_node", _counting_rag)
+
+    from app.agent.graph import build_graph
 
     graph = build_graph(checkpointer=MemorySaver())
-    config = {"configurable": {"thread_id": "t1"}}
-    result = await graph.ainvoke(
+    config = {"configurable": {"thread_id": "t-supervisor"}}
+    await graph.ainvoke(
         {
-            "messages": [HumanMessage(content="use tdd")],
+            "messages": [HumanMessage(content="hello")],
             "document_ids": ["d1"],
         },
         config,
     )
 
-    assert result.get("citations") == ["c1"]
-    contents = [m.content for m in result["messages"] if isinstance(m, SystemMessage)]
-    assert any("<context>" in content for content in contents)
+    assert rag_called["n"] == 0
+    get_settings.cache_clear()

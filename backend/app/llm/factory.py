@@ -24,4 +24,13 @@ def get_chat_model(
         return ChatAnthropic(
             model=model, api_key=settings.anthropic_api_key, streaming=True
         )
+    if provider == "deepseek":
+        if not settings.deepseek_api_key:
+            raise ValueError("DEEPSEEK_API_KEY not set")
+        return ChatOpenAI(
+            model=model,
+            api_key=settings.deepseek_api_key,
+            base_url=settings.deepseek_base_url,
+            streaming=True,
+        )
     raise ValueError(f"Unknown provider: {provider}")

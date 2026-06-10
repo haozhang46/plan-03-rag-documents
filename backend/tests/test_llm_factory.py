@@ -15,6 +15,28 @@ def test_get_chat_model_openai(monkeypatch):
     assert model.model_name == "gpt-4o-mini"
 
 
+def test_get_chat_model_deepseek(monkeypatch):
+    get_settings.cache_clear()
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-deepseek-key")
+    monkeypatch.setenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
+    get_settings.cache_clear()
+
+    model = get_chat_model("deepseek", "deepseek-chat")
+    assert model.model_name == "deepseek-chat"
+    assert str(model.openai_api_base) == "https://api.deepseek.com/v1"
+    assert model.openai_api_key.get_secret_value() == "test-deepseek-key"
+
+
+def test_get_chat_model_deepseek_missing_key(monkeypatch):
+    monkeypatch.setattr(
+        "app.llm.factory.get_settings",
+        lambda: Settings(_env_file=None, deepseek_api_key=None),
+    )
+
+    with pytest.raises(ValueError, match="DEEPSEEK_API_KEY not set"):
+        get_chat_model("deepseek", "deepseek-chat")
+
+
 def test_unknown_provider_raises():
     get_settings.cache_clear()
     with pytest.raises(ValueError, match="Unknown provider"):

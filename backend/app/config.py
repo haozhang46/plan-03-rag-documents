@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -8,7 +9,9 @@ _DEFAULT_SKILLS_ROOT = _REPO_ROOT / "skills"
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=str(_REPO_ROOT / ".env"), extra="ignore"
+    )
 
     app_name: str = "agent-flow"
     database_url: str = "postgresql://agent:agent@localhost:5432/agentflow"
@@ -16,12 +19,31 @@ class Settings(BaseSettings):
     checkpointer: str = "auto"
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None
+    deepseek_api_key: str | None = None
+    deepseek_base_url: str = "https://api.deepseek.com/v1"
     default_llm_provider: str = "openai"
     default_model: str = "gpt-4o-mini"
     embedding_provider: str = "openai"
     embedding_model: str = "text-embedding-3-small"
     skills_root: str = str(_DEFAULT_SKILLS_ROOT)
-
+    langfuse_public_key: str | None = None
+    langfuse_secret_key: str | None = None
+    langfuse_host: str = "https://cloud.langfuse.com"
+    langfuse_enabled: bool = False
+    expected_embedding_dimensions: int = 768
+    client_embedding_mode: bool = False
+    supervisor_mode: Literal["off", "llm"] = "off"
+    dispatch_mode: Literal["sequential", "parallel"] = "sequential"
+    review_mode: Literal["off", "on"] = "off"
+    summary_token_threshold: int = 4000
+    tenant_mode: bool = False
+    jwt_secret: str | None = None
+    rate_limit_rpm: int = 60
+    rag_backend: Literal["pgvector", "ragflow"] = "pgvector"
+    ragflow_base_url: str = "http://localhost"
+    ragflow_api_key: str | None = None
+    ragflow_top_k: int = 5
+    admin_api_key: str | None = None
 
 @lru_cache
 def get_settings() -> Settings:

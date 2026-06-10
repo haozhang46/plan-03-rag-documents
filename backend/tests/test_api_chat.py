@@ -1,6 +1,6 @@
-from langchain_core.messages import AIMessage
+import json
 
-from app.agent.nodes.chat import chat_node
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 
 
 def test_health(client):
@@ -8,11 +8,10 @@ def test_health(client):
 
 
 def test_chat_sse_returns_message(client, monkeypatch):
-    class FakeLLM:
-        def invoke(self, messages):
-            return AIMessage(content="hello from agent")
-
-    monkeypatch.setattr("app.agent.nodes.chat.get_chat_model", lambda: FakeLLM())
+    fake = GenericFakeChatModel(
+        messages=iter(["hello from agent"]),
+    )
+    monkeypatch.setattr("app.agent.nodes.chat.get_chat_model", lambda: fake)
 
     with client.stream(
         "POST",
@@ -20,5 +19,11 @@ def test_chat_sse_returns_message(client, monkeypatch):
         json={"thread_id": "demo", "message": "hi"},
     ) as response:
         assert response.status_code == 200
-        body = "".join(response.iter_lines())
-        assert "hello from agent" in body
+        tokens = []
+        for line in response.iter_lines():
+            if line.startswith("data: "):
+                chunk = json.loads(line[6:])
+                if "content" in chunk:
+                    tokens.append(chunk["content"])
+        full = "".join(tokens)
+        assert "hello from agent" in full

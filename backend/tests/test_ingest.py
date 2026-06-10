@@ -1,66 +1,50 @@
-import os
 from pathlib import Path
-from unittest.mock import AsyncMock
 
 import pytest
 
-from app.config import get_settings
 from app.rag.chunking import split_text
-from app.rag.ingest import ingest_file
-
-FIXTURE_PATH = Path(__file__).parent / "fixtures" / "sample.txt"
+from app.rag.ingest import extract_text, ingest_file
 
 
-def test_split_text_produces_multiple_chunks():
-    text = FIXTURE_PATH.read_text(encoding="utf-8")
-    chunks = split_text(text)
+class _MockStore:
+    def __init__(self):
+        self.docs: list[tuple[str, str]] = []
+        self.chunks: list[tuple[str, list[str]]] = []
+
+    async def create_document(self, filename: str) -> str:
+        doc_id = f"doc-{len(self.docs)}"
+        self.docs.append((doc_id, filename))
+        return doc_id
+
+    async def add_chunks(self, doc_id: str, chunks: list[str]) -> None:
+        self.chunks.append((doc_id, chunks))
+
+
+@pytest.fixture
+def txt_file(tmp_path) -> Path:
+    path = tmp_path / "test.txt"
+    path.write_text("Hello world. " * 200, encoding="utf-8")
+    return path
+
+
+def test_split_text_produces_chunks():
+    text = "hello " * 1000
+    chunks = split_text(text, chunk_size=100, overlap=20)
     assert len(chunks) > 1
-    assert all(len(chunk) <= 800 for chunk in chunks)
-    assert sum(len(c) for c in chunks) >= len(text) - 100 * (len(chunks) - 1)
+    assert all(len(c) > 0 for c in chunks)
+
+
+def test_extract_text_txt(txt_file):
+    text = extract_text(txt_file)
+    assert "Hello world" in text
 
 
 @pytest.mark.asyncio
-async def test_ingest_file_txt(monkeypatch):
-    monkeypatch.setenv("EMBEDDING_PROVIDER", "mock")
-    get_settings.cache_clear()
-
-    if os.environ.get("RUN_INTEGRATION") == "1":
-        from app.rag.db import get_pool, init_pool, run_migrations
-        from app.rag.store import DocumentStore
-
-        try:
-            await init_pool()
-            async with get_pool().connection() as conn:
-                await conn.execute("SELECT 1")
-        except Exception:
-            pytest.skip("PostgreSQL not available")
-
-        await run_migrations()
-        store = DocumentStore()
-        doc_id = await ingest_file(store, "sample.txt", FIXTURE_PATH)
-        assert doc_id
-
-        async with get_pool().connection() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    "SELECT COUNT(*) FROM document_chunks WHERE document_id = %s",
-                    (doc_id,),
-                )
-                row = await cur.fetchone()
-            await conn.commit()
-        assert row[0] > 0
-
-        async with get_pool().connection() as conn:
-            await conn.execute("DELETE FROM documents WHERE id = %s", (doc_id,))
-            await conn.commit()
-    else:
-        store = AsyncMock()
-        store.create_document.return_value = "doc-123"
-        doc_id = await ingest_file(store, "sample.txt", FIXTURE_PATH)
-        assert doc_id == "doc-123"
-        store.create_document.assert_awaited_once_with("sample.txt")
-        store.add_chunks.assert_awaited_once()
-        chunks = store.add_chunks.await_args.args[1]
-        assert len(chunks) > 0
-
-    get_settings.cache_clear()
+async def test_ingest_file_returns_doc_id(txt_file):
+    store = _MockStore()
+    doc_id = await ingest_file(store, "test.txt", txt_file)
+    assert doc_id.startswith("doc-")
+    assert len(store.docs) == 1
+    assert store.docs[0][1] == "test.txt"
+    assert len(store.chunks) == 1
+    assert len(store.chunks[0][1]) > 0

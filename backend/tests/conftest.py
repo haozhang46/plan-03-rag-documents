@@ -6,19 +6,24 @@ from fastapi import FastAPI
 from langgraph.checkpoint.memory import MemorySaver
 
 from app.agent.graph import build_graph
-from app.api.routes import chat, documents, health
+from app.api.routes import chat, documents, flows, health, sessions
 from app.config import get_settings
-from app.rag.store import DocumentStore
+from app.flows.registry import GraphRegistry
+from app.sessions.store import MemorySessionStore
 
 
 @pytest.fixture
 def test_app() -> FastAPI:
     application = FastAPI(title="Agent Flow API Test")
-    application.state.graph = build_graph(checkpointer=MemorySaver())
-    application.state.document_store = DocumentStore()
+    registry = GraphRegistry.load_all(checkpointer=MemorySaver())
+    application.state.graph_registry = registry
+    application.state.graph = registry.get("default")
+    application.state.session_store = MemorySessionStore()
     application.include_router(health.router)
     application.include_router(chat.router)
+    application.include_router(flows.router)
     application.include_router(documents.router)
+    application.include_router(sessions.router)
     return application
 
 

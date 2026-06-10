@@ -70,3 +70,220 @@ curl -N -X POST http://localhost:8000/v1/chat \
   -H 'Content-Type: application/json' \
   -d '{"thread_id":"demo","message":"hello"}'
 ```
+
+## Document API (client-side vector sync)
+
+When `CLIENT_EMBEDDING_MODE=true`, the client embeds locally (Ollama) and syncs precomputed vectors:
+
+```bash
+# 1. Create document metadata
+curl -X POST http://localhost:8000/v1/documents \
+  -H 'Content-Type: application/json' \
+  -d '{"filename":"notes.md","content_type":"text/markdown","embedding_model":"nomic-embed-text","embedding_dimensions":768}'
+
+# 2. Upload precomputed chunks
+curl -X POST http://localhost:8000/v1/documents/{document_id}/chunks \
+  -H 'Content-Type: application/json' \
+  -d '{"chunks":[{"chunk_index":0,"content":"hello","embedding":[...768 floats...]}]}'
+
+# 3. Chat with client query embedding (optional; skips server embed)
+curl -N -X POST http://localhost:8000/v1/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"thread_id":"demo","message":"what is in the doc?","document_ids":["..."], "query_embedding":[...768 floats...]}'
+```
+
+Legacy server-side ingest (OpenAI embeddings) remains at `POST /v1/documents/upload`.
+
+With uploaded documents (pass `document_ids` from `POST /v1/documents`):
+
+```bash
+curl -N -X POST http://localhost:8000/v1/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"thread_id":"demo","message":"summarize the uploaded document","document_ids":["YOUR_DOC_ID"]}'
+```
+
+With `SUPERVISOR_MODE=llm`, RAG runs only when the planner routes to `rag` (typically when `document_ids` are present and the question needs document content). With `SUPERVISOR_MODE=off` (default), the graph always runs `prepare → rag → chat`.
+
+### DeepSeek
+
+```env
+DEEPSEEK_API_KEY=sk-...
+DEFAULT_LLM_PROVIDER=deepseek
+DEFAULT_MODEL=deepseek-chat
+```
+
+Models: `deepseek-chat` (general), `deepseek-reasoner` (reasoning). RAG embeddings still require `OPENAI_API_KEY` or client-side Ollama sync.
+
+Supervisor topology:
+
+```text
+prepare → route ⇄ rag | code → chat → END
+```
+
+### Config
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CLIENT_EMBEDDING_MODE` | `false` | When true, prefer client sync path |
+| `EXPECTED_EMBEDDING_DIMENSIONS` | `768` | pgvector column size (was 1536 in Plan 03) |
+| `SUPERVISOR_MODE` | `off` | `llm` enables planner conditional rag/chat routing |
+| `RAG_BACKEND` | `pgvector` | `ragflow` uses external RAGFlow HTTP API |
+| `RAGFLOW_BASE_URL` | `http://localhost` | RAGFlow server base URL |
+| `RAGFLOW_API_KEY` | — | Bearer token from RAGFlow UI |
+| `RAGFLOW_TOP_K` | `5` | Chunks returned per retrieval |
+
+### Migrating from 1536 → 768 dimensions
+
+Existing Plan 03 databases use `vector(1536)`. Client sync requires 768-dim (`nomic-embed-text`). Reset the volume:
+
+```bash
+docker compose down -v
+docker compose up -d db
+```
+
+For brownfield upgrades, run `backend/migrations/002_client_embeddings.sql` manually to add metadata columns.
+
+## Multi-flow Agent API (external apps)
+
+This service is an **Agent Runtime** for other applications. Use HTTP only; the Nuxt `fe/` app is a debug console.
+
+### List flows
+
+```bash
+curl http://localhost:8000/v1/flows
+```
+
+### Chat with a specific flow
+
+```bash
+curl -N -X POST http://localhost:8000/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "flow_id": "knowledge-rag",
+    "thread_id": "my-app-session-1",
+    "message": "Summarize the uploaded notes",
+    "document_ids": ["<document-uuid>"],
+    "skill_names": ["test-driven-development"]
+  }'
+```
+
+- `flow_id` — registered flow (`default`, `linear-rag`, `supervisor`, `parallel`, `knowledge-rag`, `rag-flow`). Defaults to `default`.
+- `thread_id` — your app's session id. Checkpoint key is `{flow_id}:{thread_id}`.
+- `skill_names` — optional; when non-empty, overrides flow defaults and auto skill routing.
+
+### Knowledge app pattern
+
+1. Sync local Markdown: `POST /v1/documents` + `POST /v1/documents/{id}/chunks` (client embeddings) or `POST /v1/documents/upload`.
+2. Chat with `flow_id: "knowledge-rag"` and `document_ids` from step 1.
+3. Optionally pass `query_embedding` from client Ollama for vector search.
+
+## RAGFlow integration (optional)
+
+Use [RAGFlow](https://github.com/infiniflow/ragflow) as an external retrieval backend instead of local pgvector. LangGraph stays the orchestration layer; RAGFlow is only retrieval.
+
+### Recommended: deploy RAGFlow on a cloud VM
+
+Your Mac (8GB) is too small for a stable local RAGFlow stack. Use a **Linux VM with 16GB+ RAM** and point Agent Flow at it over HTTP.
+
+**1. Provision a server**
+
+| Provider | Suggested spec |
+|----------|----------------|
+| 阿里云 / 腾讯云 / AWS / 等 | 4 vCPU, **16GB RAM**, 50GB+ disk, Ubuntu 22.04+ |
+
+**2. On the server** — copy `scripts/setup-ragflow-server.sh` and run:
+
+```bash
+chmod +x setup-ragflow-server.sh
+./setup-ragflow-server.sh
+```
+
+**Use your own MySQL / Redis** (skip bundled containers):
+
+```bash
+cp scripts/ragflow-external-deps.env.example scripts/ragflow-external-deps.env
+# edit MYSQL_HOST, MYSQL_PASSWORD, REDIS_HOST, REDIS_PASSWORD, ...
+./scripts/setup-ragflow-server.sh
+```
+
+`setup-ragflow-server.sh` auto-loads `scripts/ragflow-external-deps.env` (gitignored). Override path: `RAGFLOW_DEPS_ENV=/path/to/file`.
+
+Or export inline:
+
+```bash
+export MYSQL_HOST=10.0.0.12
+export MYSQL_PASSWORD=...
+export REDIS_HOST=10.0.0.13
+export REDIS_PASSWORD=...
+./setup-ragflow-server.sh
+```
+
+Prepare MySQL beforehand:
+
+```sql
+CREATE DATABASE IF NOT EXISTS rag_flow CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+-- grant a dedicated user; RAGFlow creates tables on first boot
+```
+
+Notes:
+
+- Same host as Docker: `MYSQL_HOST=host.docker.internal` / `REDIS_HOST=host.docker.internal`
+- RAGFlow uses **Redis logical db 1** — avoid sharing a db index used by other apps, or use a dedicated Redis instance
+- Redis port in RAGFlow config is fixed at **6379** (non-standard ports need editing `service_conf.yaml.template`)
+
+Or manually:
+
+```bash
+sudo sysctl -w vm.max_map_count=262144
+git clone --depth 1 https://github.com/infiniflow/ragflow.git
+cd ragflow/docker && docker compose up -d
+```
+
+**3. Open firewall** (security group / ufw):
+
+- Allow **80** (Web UI) and **9380** (HTTP API) from your IP or VPC only
+- Do **not** expose MySQL (5455), Redis, MinIO to the public internet
+
+**4. Initialize RAGFlow**
+
+- Open `http://<server-ip>`
+- Register / login, create a **Knowledge Base (dataset)**, upload documents
+- **Settings → API** → copy API key
+
+**5. Configure Agent Flow** (on your Mac / app server `.env`):
+
+```env
+RAG_BACKEND=ragflow
+RAGFLOW_BASE_URL=http://<server-ip>
+# or https://ragflow.yourdomain.com if behind TLS reverse proxy
+RAGFLOW_API_KEY=<your-ragflow-api-key>
+RAGFLOW_TOP_K=5
+```
+
+**6. Chat**
+
+```bash
+curl -N -X POST http://localhost:8000/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "flow_id": "rag-flow",
+    "thread_id": "ragflow-demo",
+    "message": "What does the wiki say about onboarding?",
+    "dataset_ids": ["<ragflow-dataset-id>"]
+  }'
+```
+
+- `dataset_ids` — knowledge base IDs from the RAGFlow UI
+- Optional `document_ids` — limit retrieval to specific documents
+
+### Local install (dev only, 16GB+ recommended)
+
+```bash
+./scripts/setup-ragflow.sh
+```
+
+On 8GB Macs expect OOM / 502 errors; use the cloud path above instead.
+
+```env
+RAGFLOW_BASE_URL=http://localhost
+```

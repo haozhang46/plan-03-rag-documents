@@ -1,69 +1,60 @@
-import logging
 from pathlib import Path
 
-from psycopg import AsyncConnection
-from psycopg_pool import AsyncConnectionPool
+import asyncpg
 
 from app.config import get_settings
 
-logger = logging.getLogger(__name__)
-
 _MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "migrations"
-_pool: AsyncConnectionPool | None = None
 
 
-async def init_pool() -> AsyncConnectionPool:
-    global _pool
-    if _pool is None:
-        _pool = AsyncConnectionPool(
-            conninfo=get_settings().database_url,
-            open=False,
-        )
-        await _pool.open()
-    return _pool
+def _tables_sql(dim: int) -> str:
+    return f"""
+CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE TABLE IF NOT EXISTS documents (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    filename TEXT NOT NULL,
+    content_type TEXT,
+    embedding_model TEXT,
+    embedding_dimensions INT,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS document_chunks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    document_id UUID REFERENCES documents(id) ON DELETE CASCADE,
+    chunk_index INT NOT NULL,
+    content TEXT NOT NULL,
+    embedding vector({dim}),
+    metadata JSONB DEFAULT '{{}}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_chunks_embedding
+    ON document_chunks USING ivfflat (embedding vector_cosine_ops);
+
+CREATE TABLE IF NOT EXISTS sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    thread_id TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL DEFAULT 'New Chat',
+    starred BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+"""
 
 
-def get_pool() -> AsyncConnectionPool:
-    if _pool is None:
-        raise RuntimeError("Database pool not initialized. Call init_pool() first.")
-    return _pool
+def _migration_sql(name: str) -> str:
+    path = _MIGRATIONS_DIR / name
+    return path.read_text()
 
 
-def get_connection():
-    """Return an async context manager yielding a pooled connection."""
-    return get_pool().connection()
-
-
-async def _tables_exist(conn: AsyncConnection) -> bool:
-    async with conn.cursor() as cur:
-        await cur.execute(
-            """
-            SELECT EXISTS (
-                SELECT FROM information_schema.tables
-                WHERE table_schema = 'public' AND table_name = 'documents'
-            )
-            """
-        )
-        row = await cur.fetchone()
-        return bool(row[0])
-
-
-async def run_migrations() -> None:
-    pool = await init_pool()
-    async with pool.connection() as conn:
-        if await _tables_exist(conn):
-            logger.debug("RAG tables already exist, skipping migrations")
-            return
-
-        sql_files = sorted(_MIGRATIONS_DIR.glob("*.sql"))
-        if not sql_files:
-            logger.warning("No migration files found in %s", _MIGRATIONS_DIR)
-            return
-
-        for path in sql_files:
-            logger.info("Running migration: %s", path.name)
-            sql = path.read_text(encoding="utf-8")
-            await conn.execute(sql)
-
-        await conn.commit()
-        logger.info("RAG migrations completed")
+async def create_tables() -> None:
+    settings = get_settings()
+    conn = await asyncpg.connect(settings.database_url)
+    try:
+        await conn.execute(_tables_sql(settings.expected_embedding_dimensions))
+        if settings.tenant_mode:
+            await conn.execute(_migration_sql("002_tenant.sql"))
+        await conn.execute(_migration_sql("003_audit.sql"))
+    finally:
+        await conn.close()

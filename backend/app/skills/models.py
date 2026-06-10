@@ -9,6 +9,11 @@ class SkillType(str, Enum):
     resource = "resource"
 
 
+class SkillVisibility(str, Enum):
+    public = "public"
+    private = "private"
+
+
 class SkillMeta(BaseModel):
     name: str
     description: str
@@ -16,3 +21,5 @@ class SkillMeta(BaseModel):
     spawn_subagent: bool = False
     path: str
     triggers: list[str] = Field(default_factory=list)
+    visibility: SkillVisibility = SkillVisibility.public
+    tenant_id: str | None = None

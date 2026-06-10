@@ -1,0 +1,6 @@
+apiVersion: v2
+name: agent-flow
+description: Agent Flow backend API (static manifests + values reference)
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
