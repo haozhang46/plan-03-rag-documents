@@ -5,10 +5,12 @@ from langchain_core.messages import HumanMessage
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
+from app.auth.identity import get_request_identity
 from app.auth.tenant import TenantDep
 from app.audit.store import write_audit
-from app.config import get_ragflow_default_dataset_ids
 from app.observability.langfuse import get_langfuse_client
+from app.rag.authorize import authorize_rag_datasets
+from app.rag.bindings_store import RagflowBindingsStore
 from app.skills.resolve import resolve_skill_names, validate_skill_names
 
 router = APIRouter(prefix="/v1")
@@ -28,12 +30,22 @@ def _checkpoint_thread_id(flow_id: str, client_thread_id: str) -> str:
     return f"{flow_id}:{client_thread_id}"
 
 
-def _build_config(request: Request, flow_id: str, client_thread_id: str):
-    return {
-        "configurable": {
-            "thread_id": _checkpoint_thread_id(flow_id, client_thread_id),
-        }
+def _bindings_store(request: Request) -> RagflowBindingsStore | None:
+    return getattr(request.app.state, "ragflow_bindings_store", None)
+
+
+def _build_config(
+    request: Request,
+    flow_id: str,
+    client_thread_id: str,
+    ragflow_client=None,
+):
+    configurable = {
+        "thread_id": _checkpoint_thread_id(flow_id, client_thread_id),
     }
+    if ragflow_client is not None:
+        configurable["ragflow_client"] = ragflow_client
+    return {"configurable": configurable}
 
 
 def _build_input(req: ChatRequest, explicit_skill_names: list[str] | None):
@@ -42,10 +54,6 @@ def _build_input(req: ChatRequest, explicit_skill_names: list[str] | None):
         state_input["document_ids"] = req.document_ids
     if req.dataset_ids:
         state_input["dataset_ids"] = req.dataset_ids
-    else:
-        defaults = get_ragflow_default_dataset_ids()
-        if defaults:
-            state_input["dataset_ids"] = defaults
     if req.use_web_search is not None:
         state_input["use_web_search"] = req.use_web_search
     if explicit_skill_names is not None:
@@ -96,18 +104,39 @@ async def chat(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
-    config = _build_config(request, req.flow_id, req.thread_id)
+    identity = get_request_identity(request)
+    ragflow_client = None
+    store = _bindings_store(request)
+    resolved_dataset_ids: list[str] | None = None
+    if store is not None:
+        resolved_dataset_ids, ragflow_client = await authorize_rag_datasets(
+            request,
+            flow_id=req.flow_id,
+            dataset_ids=req.dataset_ids,
+            identity=identity,
+            store=store,
+        )
+        if resolved_dataset_ids is not None:
+            req = req.model_copy(update={"dataset_ids": resolved_dataset_ids})
+
+    config = _build_config(
+        request, req.flow_id, req.thread_id, ragflow_client=ragflow_client
+    )
     state_input = _build_input(req, explicit_skill_names)
+
+    audit_details = {
+        "message_length": len(req.message),
+        "flow_id": req.flow_id,
+    }
+    if resolved_dataset_ids:
+        audit_details["dataset_ids"] = resolved_dataset_ids
 
     await write_audit(
         request,
         action="chat",
         resource_type="thread",
         resource_id=req.thread_id,
-        details={
-            "message_length": len(req.message),
-            "flow_id": req.flow_id,
-        },
+        details=audit_details,
     )
 
     async def event_stream():

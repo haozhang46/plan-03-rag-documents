@@ -26,10 +26,30 @@ def get_tenant_id(request: Request) -> str | None:
     if not secret or not token:
         return None
 
-    return _tenant_id_from_jwt(token, secret)
+    payload = _decode_jwt_payload(token, secret)
+    if not payload:
+        return None
+    tenant_id = payload.get("tenant_id")
+    return str(tenant_id) if tenant_id else None
 
 
-def _tenant_id_from_jwt(token: str, secret: str) -> str | None:
+def get_user_id_from_request(request: Request) -> str | None:
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return None
+    secret = get_settings().jwt_secret
+    if not secret:
+        return None
+    payload = _decode_jwt_payload(auth[7:].strip(), secret)
+    if not payload:
+        return None
+    for key in ("sub", "user_id"):
+        if payload.get(key):
+            return str(payload[key])
+    return None
+
+
+def _decode_jwt_payload(token: str, secret: str) -> dict | None:
     try:
         header_b64, payload_b64, signature_b64 = token.split(".")
     except ValueError:
@@ -51,14 +71,11 @@ def _tenant_id_from_jwt(token: str, secret: str) -> str | None:
 
     payload_padding = "=" * (-len(payload_b64) % 4)
     try:
-        payload = json.loads(
+        return json.loads(
             base64.urlsafe_b64decode(payload_b64 + payload_padding).decode()
         )
     except (ValueError, json.JSONDecodeError, UnicodeDecodeError):
         return None
-
-    tenant_id = payload.get("tenant_id")
-    return str(tenant_id) if tenant_id else None
 
 
 async def require_tenant(request: Request) -> str | None:

@@ -7,6 +7,11 @@ from app.config import get_settings
 _MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "migrations"
 
 
+def _migration_sql(name: str) -> str:
+    path = _MIGRATIONS_DIR / name
+    return path.read_text()
+
+
 def _sessions_sql() -> str:
     return """
 CREATE TABLE IF NOT EXISTS sessions (
@@ -20,11 +25,6 @@ CREATE TABLE IF NOT EXISTS sessions (
 """
 
 
-def _migration_sql(name: str) -> str:
-    path = _MIGRATIONS_DIR / name
-    return path.read_text()
-
-
 async def create_tables() -> None:
     settings = get_settings()
     conn = await asyncpg.connect(settings.database_url)
@@ -33,5 +33,6 @@ async def create_tables() -> None:
         if settings.tenant_mode:
             await conn.execute(_migration_sql("002_tenant.sql"))
         await conn.execute(_migration_sql("003_audit.sql"))
+        await conn.execute(_migration_sql("004_ragflow_bindings.sql"))
     finally:
         await conn.close()

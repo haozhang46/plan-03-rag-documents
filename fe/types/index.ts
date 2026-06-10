@@ -1,3 +1,9 @@
+export interface RagDataset {
+  id: string;
+  name: string;
+  permission: string;
+}
+
 export interface FlowInfo {
   flow_id: string;
   title: string;

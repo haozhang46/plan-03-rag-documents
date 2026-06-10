@@ -14,6 +14,13 @@ class RagFlowChunk:
     document_name: str | None = None
 
 
+@dataclass
+class RagFlowDataset:
+    id: str
+    name: str
+    permission: str
+
+
 class RagFlowClient:
     def __init__(
         self,
@@ -74,6 +81,28 @@ class RagFlowClient:
                 )
             )
         return hits
+
+    def list_datasets(
+        self, page: int = 1, page_size: int = 100
+    ) -> list[RagFlowDataset]:
+        with httpx.Client(timeout=self._timeout) as client:
+            resp = client.get(
+                f"{self._base_url}/api/v1/datasets",
+                headers=self._headers(),
+                params={"page": page, "page_size": page_size},
+            )
+            resp.raise_for_status()
+            body = resp.json()
+        if body.get("code") != 0:
+            raise RuntimeError(body.get("message", "list datasets failed"))
+        return [
+            RagFlowDataset(
+                id=str(row["id"]),
+                name=str(row.get("name", "")),
+                permission=str(row.get("permission", "me")),
+            )
+            for row in body.get("data") or []
+        ]
 
     def health_check(self) -> bool:
         try:

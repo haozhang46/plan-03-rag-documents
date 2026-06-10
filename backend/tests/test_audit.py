@@ -7,6 +7,7 @@ from app.flows.registry import GraphRegistry
 from app.agent.tools.run_python import run_python
 from app.api.routes import chat, sessions
 from app.audit.store import MemoryAuditStore
+from app.rag.bindings_store import MemoryRagflowBindingsStore
 from app.sessions.store import MemorySessionStore
 
 
@@ -18,6 +19,7 @@ def audit_app():
     app.state.graph = registry.get("default")
     app.state.session_store = MemorySessionStore()
     app.state.audit_store = MemoryAuditStore()
+    app.state.ragflow_bindings_store = MemoryRagflowBindingsStore()
     app.include_router(sessions.router)
     app.include_router(chat.router)
     return app

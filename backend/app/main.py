@@ -8,10 +8,11 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from app.agent.graph import build_graph
 from app.flows.registry import GraphRegistry
-from app.api.routes import chat, flows, health, sessions, skills
+from app.api.routes import admin_ragflow, chat, flows, health, rag, sessions, skills
 from app.audit.store import MemoryAuditStore, PostgresAuditStore
 from app.config import get_settings
 from app.middleware.rate_limit import RateLimitMiddleware, reset_rate_limiter
+from app.rag.bindings_store import MemoryRagflowBindingsStore, PostgresRagflowBindingsStore
 from app.rag.db import create_tables
 from app.sessions.store import MemorySessionStore, PostgresSessionStore
 
@@ -29,6 +30,7 @@ async def lifespan(app: FastAPI):
         app.state.graph = registry.get("default")
         app.state.session_store = MemorySessionStore()
         app.state.audit_store = MemoryAuditStore()
+        app.state.ragflow_bindings_store = MemoryRagflowBindingsStore()
         logger.info("Checkpointer: MemorySaver (in-process, dev only)")
         yield
         return
@@ -45,6 +47,7 @@ async def lifespan(app: FastAPI):
                 await create_tables()
                 app.state.session_store = PostgresSessionStore()
                 app.state.audit_store = PostgresAuditStore()
+                app.state.ragflow_bindings_store = PostgresRagflowBindingsStore()
                 logger.info("Checkpointer: Postgres")
                 yield
             return
@@ -62,6 +65,7 @@ async def lifespan(app: FastAPI):
     app.state.graph = registry.get("default")
     app.state.session_store = MemorySessionStore()
     app.state.audit_store = MemoryAuditStore()
+    app.state.ragflow_bindings_store = MemoryRagflowBindingsStore()
     yield
 
 
@@ -82,5 +86,7 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(chat.router)
 app.include_router(flows.router)
+app.include_router(rag.router)
+app.include_router(admin_ragflow.router)
 app.include_router(sessions.router)
 app.include_router(skills.router)

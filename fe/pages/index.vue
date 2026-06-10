@@ -44,6 +44,17 @@
           </button>
         </div>
       </div>
+
+      <RagDatasetPanel
+        :datasets="datasets"
+        :selected-ids="selectedDatasetIds"
+        :loading="datasetsLoading"
+        :error="datasetsError"
+        @refresh="refreshDatasets"
+        @toggle-selected="toggleDataset"
+        @select-all="selectAllDatasets"
+        @clear-selection="clearDatasetSelection"
+      />
     </aside>
 
     <!-- chat area -->
@@ -53,10 +64,11 @@
         <div v-if="loading" class="text-gray-400 text-sm">Thinking...</div>
       </div>
       <div
-        v-if="flowId || selectedSkillNames.length"
+        v-if="flowId || selectedSkillNames.length || selectedDatasetIds.length"
         class="px-4 py-1.5 text-xs text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-950 border-t border-green-200 dark:border-green-800"
       >
         <span v-if="flowId">flow: {{ flowId }}</span>
+        <span v-if="selectedDatasetIds.length"> · RAG {{ selectedDatasetIds.length }} 库</span>
         <span v-if="selectedSkillNames.length"> · skills {{ selectedSkillNames.length }}</span>
       </div>
       <ChatInput :loading="loading" @send="onSend" />
@@ -83,10 +95,20 @@ const {
   refresh: refreshSkills,
   toggle: toggleSkill,
 } = useSkillsPicker();
+const {
+  datasets,
+  selectedIds: selectedDatasetIds,
+  loading: datasetsLoading,
+  error: datasetsError,
+  refresh: refreshDatasets,
+  toggleSelected: toggleDataset,
+  selectAll: selectAllDatasets,
+  clearSelection: clearDatasetSelection,
+} = useRagDatasets(activeThreadId);
 
 onMounted(async () => {
   await load();
-  await Promise.all([refreshFlows(), refreshSkills()]);
+  await Promise.all([refreshFlows(), refreshSkills(), refreshDatasets()]);
 });
 
 async function newChat() {
@@ -112,6 +134,9 @@ async function onSend(text: string) {
       flowId: flowId.value,
       skillNames: selectedSkillNames.value.length
         ? selectedSkillNames.value
+        : undefined,
+      datasetIds: selectedDatasetIds.value.length
+        ? selectedDatasetIds.value
         : undefined,
     });
     for await (const chunk of gen) {

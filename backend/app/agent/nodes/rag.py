@@ -25,7 +25,7 @@ def retrieve_rag_context(state: AgentState, config: RunnableConfig) -> dict:
         m for m in reversed(state["messages"]) if isinstance(m, HumanMessage)
     )
     document_ids = state.get("document_ids") or None
-    client = RagFlowClient()
+    client = config.get("configurable", {}).get("ragflow_client") or RagFlowClient()
     try:
         rows = client.retrieve(
             question=last_human.content,

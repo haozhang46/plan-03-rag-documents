@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { ref, watch } from "vue";
 import { useFlows } from "../composables/useFlows";
 
 describe("useFlows", () => {
@@ -7,6 +8,9 @@ describe("useFlows", () => {
     vi.stubGlobal("useRuntimeConfig", () => ({
       public: { apiBase: "" },
     }));
+    vi.stubGlobal("ref", ref);
+    vi.stubGlobal("watch", watch);
+    vi.stubGlobal("onMounted", (fn: () => void) => fn());
   });
 
   it("persists selected flow_id", async () => {
