@@ -44,22 +44,6 @@
           </button>
         </div>
       </div>
-
-      <RagDocumentPanel
-        :documents="documents"
-        :selected-ids="selectedIds"
-        :loading="docsLoading"
-        :uploading="docsUploading"
-        :error="docsError"
-        :embedding-model="String(config.public.embeddingModel)"
-        :embedding-dimensions="Number(config.public.embeddingDimensions)"
-        @refresh="refreshDocuments"
-        @upload="onUploadDocument"
-        @remove="onRemoveDocument"
-        @toggle-selected="toggleSelected"
-        @select-all="selectAll"
-        @clear-selection="clearSelection"
-      />
     </aside>
 
     <!-- chat area -->
@@ -69,11 +53,10 @@
         <div v-if="loading" class="text-gray-400 text-sm">Thinking...</div>
       </div>
       <div
-        v-if="selectedIds.length || selectedSkillNames.length"
+        v-if="flowId || selectedSkillNames.length"
         class="px-4 py-1.5 text-xs text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-950 border-t border-green-200 dark:border-green-800"
       >
         <span v-if="flowId">flow: {{ flowId }}</span>
-        <span v-if="selectedIds.length"> · RAG {{ selectedIds.length }} 文件</span>
         <span v-if="selectedSkillNames.length"> · skills {{ selectedSkillNames.length }}</span>
       </div>
       <ChatInput :loading="loading" @send="onSend" />
@@ -82,11 +65,10 @@
 </template>
 
 <script setup lang="ts">
-const config = useRuntimeConfig();
 const { threads, activeThreadId, create, updateTitle, remove, toggleStar, load } =
   useThreads();
 const { messages, loading, addUserMessage, addAssistantChunk } = useMessages(activeThreadId);
-const { streamChat, embedQuery } = useChat();
+const { streamChat } = useChat();
 const {
   flows,
   flowId,
@@ -101,23 +83,10 @@ const {
   refresh: refreshSkills,
   toggle: toggleSkill,
 } = useSkillsPicker();
-const {
-  documents,
-  selectedIds,
-  loading: docsLoading,
-  uploading: docsUploading,
-  error: docsError,
-  refresh: refreshDocuments,
-  uploadFile,
-  removeDocument,
-  toggleSelected,
-  selectAll,
-  clearSelection,
-} = useDocuments(activeThreadId);
 
 onMounted(async () => {
   await load();
-  await Promise.all([refreshFlows(), refreshSkills(), refreshDocuments()]);
+  await Promise.all([refreshFlows(), refreshSkills()]);
 });
 
 async function newChat() {
@@ -132,22 +101,6 @@ async function deleteThread(id: string) {
   await remove(id);
 }
 
-async function onUploadDocument(file: File) {
-  try {
-    await uploadFile(file);
-  } catch {
-    // error surfaced via docsError
-  }
-}
-
-async function onRemoveDocument(id: string) {
-  try {
-    await removeDocument(id);
-  } catch {
-    // error surfaced via docsError
-  }
-}
-
 async function onSend(text: string) {
   if (!activeThreadId.value) await newChat();
   const threadId = activeThreadId.value!;
@@ -155,17 +108,11 @@ async function onSend(text: string) {
   loading.value = true;
 
   try {
-    const activeDocIds = selectedIds.value;
-    const queryEmbedding = activeDocIds.length
-      ? await embedQuery(text)
-      : undefined;
     const gen = streamChat(threadId, text, {
       flowId: flowId.value,
       skillNames: selectedSkillNames.value.length
         ? selectedSkillNames.value
         : undefined,
-      documentIds: activeDocIds.length ? activeDocIds : undefined,
-      queryEmbedding,
     });
     for await (const chunk of gen) {
       if (chunk.content) {

@@ -1,14 +1,13 @@
-# Apple Silicon: 使用原生 arm64，避免触发 Rosetta 模拟（VZErrorDomain Code=1）
+# Production stack for Linux x86_64 (Tencent Cloud VM).
+# Usage: docker compose -f docker-compose.server.yml up -d --build
+
 services:
   db:
     image: pgvector/pgvector:pg16
-    platform: linux/arm64
     environment:
       POSTGRES_USER: agent
       POSTGRES_PASSWORD: agent
       POSTGRES_DB: agentflow
-    ports:
-      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./backend/migrations/001_documents.sql:/docker-entrypoint-initdb.d/001_documents.sql
@@ -17,45 +16,49 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   searxng:
     image: searxng/searxng:latest
-    platform: linux/arm64
-    ports:
-      - "8080:8080"
     volumes:
       - ./config/searxng:/etc/searxng:rw
     environment:
-      SEARXNG_BASE_URL: http://localhost:8080/
+      SEARXNG_BASE_URL: http://searxng:8080/
+    restart: unless-stopped
 
   api:
-    build: ./backend
-    platform: linux/arm64
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
     ports:
       - "8000:8000"
     env_file: .env
     environment:
       DATABASE_URL: postgresql://agent:agent@db:5432/agentflow
+      CHECKPOINTER: postgres
+      SKILLS_ROOT: /skills
       SEARXNG_BASE_URL: http://searxng:8080
+    volumes:
+      - ./skills:/skills:ro
     depends_on:
       db:
         condition: service_healthy
       searxng:
         condition: service_started
+    restart: unless-stopped
 
-  # Optional: self-hosted Langfuse for observability
-  # Uncomment and set LANGFUSE_HOST=http://langfuse:3000 in .env
-  # langfuse:
-  #   image: langfuse/langfuse:latest
-  #   platform: linux/arm64
-  #   ports:
-  #     - "3000:3000"
-  #   environment:
-  #     DATABASE_URL: postgresql://agent:agent@db:5432/agentflow
-  #     NEXTAUTH_SECRET: change-me
-  #   depends_on:
-  #     db:
-  #       condition: service_healthy
+  fe:
+    build:
+      context: ./fe
+      dockerfile: Dockerfile.prod
+      args:
+        NUXT_PUBLIC_API_BASE: ${NUXT_PUBLIC_API_BASE:-http://localhost:8000}
+        NUXT_PUBLIC_DEFAULT_FLOW_ID: ${NUXT_PUBLIC_DEFAULT_FLOW_ID:-default}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    restart: unless-stopped
 
 volumes:
   pgdata:

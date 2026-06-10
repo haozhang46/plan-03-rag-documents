@@ -7,6 +7,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from app.auth.tenant import TenantDep
 from app.audit.store import write_audit
+from app.config import get_ragflow_default_dataset_ids
 from app.observability.langfuse import get_langfuse_client
 from app.skills.resolve import resolve_skill_names, validate_skill_names
 
@@ -20,7 +21,7 @@ class ChatRequest(BaseModel):
     skill_names: list[str] | None = None
     document_ids: list[str] | None = None
     dataset_ids: list[str] | None = None
-    query_embedding: list[float] | None = None
+    use_web_search: bool | None = None
 
 
 def _checkpoint_thread_id(flow_id: str, client_thread_id: str) -> str:
@@ -28,10 +29,8 @@ def _checkpoint_thread_id(flow_id: str, client_thread_id: str) -> str:
 
 
 def _build_config(request: Request, flow_id: str, client_thread_id: str):
-    store = getattr(request.app.state, "store", None)
     return {
         "configurable": {
-            "store": store,
             "thread_id": _checkpoint_thread_id(flow_id, client_thread_id),
         }
     }
@@ -43,8 +42,12 @@ def _build_input(req: ChatRequest, explicit_skill_names: list[str] | None):
         state_input["document_ids"] = req.document_ids
     if req.dataset_ids:
         state_input["dataset_ids"] = req.dataset_ids
-    if req.query_embedding is not None:
-        state_input["query_embedding"] = req.query_embedding
+    else:
+        defaults = get_ragflow_default_dataset_ids()
+        if defaults:
+            state_input["dataset_ids"] = defaults
+    if req.use_web_search is not None:
+        state_input["use_web_search"] = req.use_web_search
     if explicit_skill_names is not None:
         state_input["explicit_skill_names"] = explicit_skill_names
     return state_input

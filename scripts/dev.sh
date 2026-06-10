@@ -53,6 +53,12 @@ if [[ ! -f .env ]]; then
   cp .env.example .env
 fi
 
+# Export root .env for child processes (NUXT_PUBLIC_* for frontend, etc.)
+set -a
+# shellcheck disable=SC1091
+source "$ROOT/.env"
+set +a
+
 if [[ "$START_DB" -eq 1 ]]; then
   if docker_ready; then
     echo "==> Starting Postgres (pgvector)..."

@@ -3,4 +3,5 @@ node_modules/
 .output/
 dist/
 .env
+.env.localServer
 *.local

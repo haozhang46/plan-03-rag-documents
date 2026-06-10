@@ -10,7 +10,9 @@ export function useFlows() {
   const error = ref<string | null>(null);
 
   function loadStoredFlowId() {
-    flowId.value = localStorage.getItem(STORAGE_KEY) || "default";
+    flowId.value =
+      localStorage.getItem(STORAGE_KEY) ||
+      String(config.public.defaultFlowId || "default");
   }
 
   function saveFlowId(id: string) {

@@ -2,11 +2,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from langgraph.checkpoint.memory import MemorySaver
-from unittest.mock import AsyncMock, MagicMock
 
 from app.flows.registry import GraphRegistry
 from app.agent.tools.run_python import run_python
-from app.api.routes import chat, documents, sessions
+from app.api.routes import chat, sessions
 from app.audit.store import MemoryAuditStore
 from app.sessions.store import MemorySessionStore
 
@@ -20,7 +19,6 @@ def audit_app():
     app.state.session_store = MemorySessionStore()
     app.state.audit_store = MemoryAuditStore()
     app.include_router(sessions.router)
-    app.include_router(documents.router)
     app.include_router(chat.router)
     return app
 
@@ -93,29 +91,6 @@ async def test_session_delete_writes_audit(audit_client):
     deletes = [e for e in await store.list() if e.action == "delete"]
     assert len(deletes) == 1
     assert deletes[0].resource_id == session_id
-
-
-@pytest.mark.asyncio
-async def test_document_create_writes_audit(audit_client):
-    store_mock = MagicMock()
-    store_mock.create_document_meta = AsyncMock(return_value="doc-123")
-    audit_client.app.state.store = store_mock
-
-    resp = audit_client.post(
-        "/v1/documents",
-        json={
-            "filename": "notes.md",
-            "content_type": "text/markdown",
-        },
-    )
-    assert resp.status_code == 200
-
-    audit_store: MemoryAuditStore = audit_client.app.state.audit_store
-    entries = await audit_store.list()
-    assert len(entries) == 1
-    assert entries[0].action == "create"
-    assert entries[0].resource_type == "document"
-    assert entries[0].resource_id == "doc-123"
 
 
 def test_run_python_blocks_socket_import():

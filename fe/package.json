@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "nuxt dev",
+    "dev:localServer": "bash ../scripts/dev-fe-local-server.sh",
     "build": "nuxt build",
     "generate": "nuxt generate",
     "preview": "nuxt preview",

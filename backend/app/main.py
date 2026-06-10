@@ -8,12 +8,11 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from app.agent.graph import build_graph
 from app.flows.registry import GraphRegistry
-from app.api.routes import chat, documents, flows, health, sessions, skills
+from app.api.routes import chat, flows, health, sessions, skills
 from app.audit.store import MemoryAuditStore, PostgresAuditStore
 from app.config import get_settings
 from app.middleware.rate_limit import RateLimitMiddleware, reset_rate_limiter
 from app.rag.db import create_tables
-from app.rag.store import DocumentStore
 from app.sessions.store import MemorySessionStore, PostgresSessionStore
 
 logger = logging.getLogger(__name__)
@@ -44,7 +43,6 @@ async def lifespan(app: FastAPI):
                 app.state.graph_registry = registry
                 app.state.graph = registry.get("default")
                 await create_tables()
-                app.state.store = DocumentStore()
                 app.state.session_store = PostgresSessionStore()
                 app.state.audit_store = PostgresAuditStore()
                 logger.info("Checkpointer: Postgres")
@@ -84,6 +82,5 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(chat.router)
 app.include_router(flows.router)
-app.include_router(documents.router)
 app.include_router(sessions.router)
 app.include_router(skills.router)

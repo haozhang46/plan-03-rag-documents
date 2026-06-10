@@ -11,7 +11,6 @@ export function useChat() {
       skillNames?: string[];
       documentIds?: string[];
       datasetIds?: string[];
-      queryEmbedding?: number[];
     },
   ): AsyncGenerator<ChatResponseChunk> {
     const body: Record<string, unknown> = {
@@ -27,9 +26,6 @@ export function useChat() {
     }
     if (options?.datasetIds?.length) {
       body.dataset_ids = options.datasetIds;
-    }
-    if (options?.queryEmbedding) {
-      body.query_embedding = options.queryEmbedding;
     }
 
     const res = await fetch(`${config.public.apiBase}/v1/chat`, {
@@ -64,10 +60,5 @@ export function useChat() {
     }
   }
 
-  async function embedQuery(message: string): Promise<number[]> {
-    const { embedText } = useOllamaEmbed();
-    return embedText(message);
-  }
-
-  return { streamChat, embedQuery };
+  return { streamChat };
 }

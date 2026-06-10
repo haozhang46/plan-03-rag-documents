@@ -10,15 +10,6 @@ export interface SkillInfo {
   description: string;
 }
 
-export interface RagDocument {
-  document_id: string;
-  filename: string;
-  content_type?: string;
-  embedding_model?: string;
-  embedding_dimensions?: number;
-  created_at?: string;
-}
-
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
@@ -32,7 +23,6 @@ export interface ChatRequest {
   skill_names?: string[];
   document_ids?: string[];
   dataset_ids?: string[];
-  query_embedding?: number[];
 }
 
 export interface ChatResponseChunk {
@@ -47,17 +37,4 @@ export interface Thread {
   updatedAt: string;
   starred?: boolean;
   sessionId?: string;
-}
-
-export interface ChunkUpload {
-  chunk_index: number;
-  content: string;
-  embedding: number[];
-}
-
-export interface CreateDocumentBody {
-  filename: string;
-  content_type: string;
-  embedding_model: string;
-  embedding_dimensions: number;
 }

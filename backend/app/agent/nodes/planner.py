@@ -14,13 +14,16 @@ def _planner_system_prompt(state: AgentState) -> str:
         f"- {s.name} ({s.skill_type}): {s.description}" for s in skills
     )
     doc_ids = state.get("document_ids") or []
+    dataset_ids = state.get("dataset_ids") or []
+    has_rag_scope = bool(doc_ids or dataset_ids)
     return (
         "You are the routing planner for an agent platform.\n"
         "Choose next_agent:\n"
-        "- rag: user question requires content from uploaded documents AND document_ids are present.\n"
+        "- rag: user question requires knowledge-base retrieval AND dataset_ids or document_ids are present.\n"
         "- code: user wants Python code executed, calculations run, or numeric/script output.\n"
         "- chat: general conversation, coding help without execution, or questions answerable from context.\n"
-        "Never choose rag if document_ids is empty.\n\n"
+        "Never choose rag if both dataset_ids and document_ids are empty.\n\n"
+        f"dataset_ids present: {bool(dataset_ids)} ({len(dataset_ids)} ids)\n"
         f"document_ids present: {bool(doc_ids)} ({len(doc_ids)} ids)\n\n"
         f"Available skills (metadata only):\n{skill_lines}\n"
     )
@@ -68,7 +71,7 @@ def planner_node(state: AgentState) -> dict:
             )
             result: RouterOutput = structured.invoke([sys_msg, last_human])
             next_agent = result.next_agent
-            if not (state.get("document_ids") or []) and next_agent == "rag":
+            if not (state.get("document_ids") or state.get("dataset_ids")) and next_agent == "rag":
                 next_agent = "chat"
             return {
                 "next_agent": next_agent,

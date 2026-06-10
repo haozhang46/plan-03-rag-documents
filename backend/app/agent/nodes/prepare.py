@@ -2,6 +2,7 @@ from pathlib import Path
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from app.agent.intent import classify_web_search_intent
 from app.agent.state import AgentState
 from app.config import get_settings
 from app.skills.loader import load_l2
@@ -38,7 +39,26 @@ def _build_skill_output(selected: list, root: Path) -> dict:
     return out
 
 
-def prepare_node(state: AgentState) -> dict:
+def _last_human_message(state: AgentState) -> HumanMessage | None:
+    for msg in reversed(state["messages"]):
+        if isinstance(msg, HumanMessage):
+            return msg
+    return None
+
+
+def _resolve_web_search_intent(state: AgentState) -> dict:
+    if state.get("use_web_search") is not None:
+        return {}
+    if not get_settings().web_search_enabled:
+        return {}
+    last_human = _last_human_message(state)
+    if last_human is None or not last_human.content.strip():
+        return {"use_web_search": False}
+    use, reason = classify_web_search_intent(last_human.content)
+    return {"use_web_search": use, "web_search_reason": reason}
+
+
+def _prepare_skills(state: AgentState) -> dict:
     explicit = state.get("explicit_skill_names")
     if explicit is not None:
         if not explicit:
@@ -48,12 +68,19 @@ def prepare_node(state: AgentState) -> dict:
         root = Path(get_settings().skills_root)
         return _build_skill_output(selected, root)
 
-    last_human = next(
-        m for m in reversed(state["messages"]) if isinstance(m, HumanMessage)
-    )
+    last_human = _last_human_message(state)
+    if last_human is None:
+        return {}
+
     router = SkillRouter()
     selected = router.select(last_human.content)
     if not selected:
         return {}
     root = Path(get_settings().skills_root)
     return _build_skill_output(selected, root)
+
+
+def prepare_node(state: AgentState) -> dict:
+    out = _resolve_web_search_intent(state)
+    out.update(_prepare_skills(state))
+    return out

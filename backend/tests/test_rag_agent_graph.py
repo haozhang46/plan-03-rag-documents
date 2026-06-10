@@ -7,34 +7,31 @@ from app.agent.graphs.rag_agent import build_rag_agent, rag_agent_node
 
 
 @dataclass
-class _FakeHit:
+class _FakeRagFlowChunk:
     chunk_id: str
     document_id: str
     content: str
     score: float
 
 
-class _FakeStore:
-    def __init__(self, hits=None):
-        self._hits = hits or []
+def _mock_ragflow_retrieve(monkeypatch, hits: list[_FakeRagFlowChunk]):
+    monkeypatch.setattr(
+        "app.agent.nodes.rag.RagFlowClient.retrieve",
+        lambda self, **kwargs: hits,
+    )
 
-    async def similarity_search(self, query, document_ids=None, k=5):
-        return self._hits
 
-
-def test_rag_agent_subgraph_injects_context_and_citations():
-    store = _FakeStore(
-        hits=[
-            _FakeHit(chunk_id="c1", document_id="d1", content="chunk one", score=0.9),
-        ]
+def test_rag_agent_subgraph_injects_context_and_citations(monkeypatch):
+    _mock_ragflow_retrieve(
+        monkeypatch,
+        [_FakeRagFlowChunk("c1", "d1", "chunk one", 0.9)],
     )
     state = {
         "messages": [HumanMessage(content="what does the doc say?")],
-        "document_ids": ["d1"],
+        "dataset_ids": ["kb-1"],
     }
-    config = {"configurable": {"store": store}}
     graph = build_rag_agent()
-    result = graph.invoke(state, config)
+    result = graph.invoke(state, {"configurable": {}})
 
     assert result["citations"] == ["c1"]
     assert any(
@@ -43,12 +40,14 @@ def test_rag_agent_subgraph_injects_context_and_citations():
     )
 
 
-def test_rag_agent_subgraph_noop_without_document_ids():
-    store = _FakeStore(hits=[_FakeHit("c1", "d1", "x", 0.9)])
+def test_rag_agent_subgraph_noop_without_dataset_ids(monkeypatch):
+    _mock_ragflow_retrieve(
+        monkeypatch,
+        [_FakeRagFlowChunk("c1", "d1", "x", 0.9)],
+    )
     state = {"messages": [HumanMessage(content="hello")]}
-    config = {"configurable": {"store": store}}
     graph = build_rag_agent()
-    result = graph.invoke(state, config)
+    result = graph.invoke(state, {"configurable": {}})
 
     assert "citations" not in result or not result.get("citations")
     assert not any(
@@ -58,15 +57,15 @@ def test_rag_agent_subgraph_noop_without_document_ids():
 
 
 def test_rag_agent_node_sets_rag_completed(monkeypatch):
-    store = _FakeStore(
-        hits=[_FakeHit(chunk_id="c1", document_id="d1", content="ctx", score=0.9)]
+    _mock_ragflow_retrieve(
+        monkeypatch,
+        [_FakeRagFlowChunk("c1", "d1", "ctx", 0.9)],
     )
     state = {
         "messages": [HumanMessage(content="query")],
-        "document_ids": ["d1"],
+        "dataset_ids": ["kb-1"],
     }
-    config = {"configurable": {"store": store}}
-    out = rag_agent_node(state, config)
+    out = rag_agent_node(state, {"configurable": {}})
 
     assert out.get("rag_completed") is True
     assert out.get("citations") == ["c1"]
@@ -150,17 +149,18 @@ async def test_supervisor_rag_path_returns_to_planner_then_chat(
         "app.agent.graph.rag_agent_node", _counting_rag_agent
     )
 
-    store = _FakeStore(
-        hits=[_FakeHit(chunk_id="c1", document_id="d1", content="doc text", score=0.9)]
+    _mock_ragflow_retrieve(
+        monkeypatch,
+        [_FakeRagFlowChunk("c1", "d1", "doc text", 0.9)],
     )
     from app.agent.graph import build_graph
 
     graph = build_graph(checkpointer=MemorySaver())
-    config = {"configurable": {"thread_id": "t-rag-handoff", "store": store}}
+    config = {"configurable": {"thread_id": "t-rag-handoff"}}
     result = await graph.ainvoke(
         {
             "messages": [HumanMessage(content="summarize the uploaded pdf")],
-            "document_ids": ["d1"],
+            "dataset_ids": ["kb-1"],
         },
         config,
     )

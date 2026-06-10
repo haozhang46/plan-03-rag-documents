@@ -46,7 +46,8 @@ def heuristic_next_agent(state: AgentState) -> NextAgent:
     if any(k in text for k in _CODE_KEYWORDS):
         return "code"
     ids = state.get("document_ids") or []
-    if not ids:
+    dataset_ids = state.get("dataset_ids") or []
+    if not ids and not dataset_ids:
         return "chat"
     if any(k in text for k in _DOC_KEYWORDS):
         return "rag"
@@ -59,6 +60,12 @@ def route_after_prepare(state: AgentState) -> str:
     if get_settings().supervisor_mode == "llm":
         return "route"
     return "rag"
+
+
+def route_after_rag(state: AgentState) -> str:
+    if get_settings().web_search_enabled and state.get("use_web_search"):
+        return "web"
+    return "chat"
 
 
 def route_after_planner(state: AgentState) -> NextAgent:

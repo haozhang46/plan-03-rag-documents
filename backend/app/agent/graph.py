@@ -9,7 +9,8 @@ from app.agent.nodes.chat import chat_node
 from app.agent.nodes.prepare import prepare_node
 from app.agent.nodes.rag import rag_node
 from app.agent.nodes.summarize import summarize_node
-from app.agent.routing import route_after_planner, route_after_prepare
+from app.agent.nodes.web_search import web_search_node
+from app.agent.routing import route_after_planner, route_after_prepare, route_after_rag
 from app.agent.state import AgentState
 from app.config import get_settings
 
@@ -22,6 +23,8 @@ def _build_linear_graph(checkpointer=None):
     graph.add_node("prepare", prepare_node)
     graph.add_node("summarize", summarize_node)
     graph.add_node("rag", rag_node)
+    if get_settings().web_search_enabled:
+        graph.add_node("web", web_search_node)
     graph.add_node("chat", chat_node)
     graph.add_edge(START, "prepare")
     graph.add_conditional_edges(
@@ -30,7 +33,15 @@ def _build_linear_graph(checkpointer=None):
         {"summarize": "summarize", "rag": "rag"},
     )
     graph.add_edge("summarize", "rag")
-    graph.add_edge("rag", "chat")
+    if get_settings().web_search_enabled:
+        graph.add_conditional_edges(
+            "rag",
+            route_after_rag,
+            {"web": "web", "chat": "chat"},
+        )
+        graph.add_edge("web", "chat")
+    else:
+        graph.add_edge("rag", "chat")
     graph.add_edge("chat", END)
     return graph.compile(checkpointer=checkpointer)
 

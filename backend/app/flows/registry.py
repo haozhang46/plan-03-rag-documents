@@ -35,7 +35,7 @@ FLOW_SPECS: tuple[FlowSpec, ...] = (
     FlowSpec(
         flow_id="rag-flow",
         title="RAG Flow (RAGFlow)",
-        description="prepare → rag → chat; uses RAG_BACKEND (ragflow or pgvector). Skips rag without dataset_ids/document_ids.",
+        description="prepare → rag → chat via RAGFlow. Skips rag without dataset_ids.",
         builder=rag_flow.build,
     ),
 )
