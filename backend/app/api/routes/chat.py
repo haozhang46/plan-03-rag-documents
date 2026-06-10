@@ -19,6 +19,7 @@ class ChatRequest(BaseModel):
     message: str
     skill_names: list[str] | None = None
     document_ids: list[str] | None = None
+    dataset_ids: list[str] | None = None
     query_embedding: list[float] | None = None
 
 
@@ -40,6 +41,8 @@ def _build_input(req: ChatRequest, explicit_skill_names: list[str] | None):
     state_input: dict = {"messages": [HumanMessage(content=req.message)]}
     if req.document_ids:
         state_input["document_ids"] = req.document_ids
+    if req.dataset_ids:
+        state_input["dataset_ids"] = req.dataset_ids
     if req.query_embedding is not None:
         state_input["query_embedding"] = req.query_embedding
     if explicit_skill_names is not None:

@@ -10,6 +10,7 @@ export function useChat() {
       flowId?: string;
       skillNames?: string[];
       documentIds?: string[];
+      datasetIds?: string[];
       queryEmbedding?: number[];
     },
   ): AsyncGenerator<ChatResponseChunk> {
@@ -23,6 +24,9 @@ export function useChat() {
     }
     if (options?.documentIds?.length) {
       body.document_ids = options.documentIds;
+    }
+    if (options?.datasetIds?.length) {
+      body.dataset_ids = options.datasetIds;
     }
     if (options?.queryEmbedding) {
       body.query_embedding = options.queryEmbedding;

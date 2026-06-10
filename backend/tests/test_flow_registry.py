@@ -12,6 +12,7 @@ def test_load_all_registers_builtin_flows():
         "supervisor",
         "parallel",
         "knowledge-rag",
+        "rag-flow",
     }
 
 

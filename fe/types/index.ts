@@ -31,6 +31,7 @@ export interface ChatRequest {
   message: string;
   skill_names?: string[];
   document_ids?: string[];
+  dataset_ids?: string[];
   query_embedding?: number[];
 }
 

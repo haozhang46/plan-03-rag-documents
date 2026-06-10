@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+scripts/ragflow-external-deps.env
 
 # Python
 __pycache__/

@@ -21,6 +21,7 @@ class SubtaskResult(TypedDict):
 class AgentState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
     document_ids: NotRequired[list[str]]
+    dataset_ids: NotRequired[list[str]]
     citations: NotRequired[list[str]]
     query_embedding: NotRequired[list[float]]
     next_agent: NotRequired[Literal["rag", "chat", "code"]]

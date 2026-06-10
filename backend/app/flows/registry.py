@@ -1,4 +1,4 @@
-from app.flows.builders import default, knowledge, linear_rag, parallel, supervisor
+from app.flows.builders import default, knowledge, linear_rag, parallel, rag_flow, supervisor
 from app.flows.specs import FlowSpec
 
 FLOW_SPECS: tuple[FlowSpec, ...] = (
@@ -31,6 +31,12 @@ FLOW_SPECS: tuple[FlowSpec, ...] = (
         title="Knowledge / notes",
         description="RAG-focused supervisor flow for document Q&A.",
         builder=knowledge.build,
+    ),
+    FlowSpec(
+        flow_id="rag-flow",
+        title="RAG Flow (RAGFlow)",
+        description="prepare → rag → chat; uses RAG_BACKEND (ragflow or pgvector). Skips rag without dataset_ids/document_ids.",
+        builder=rag_flow.build,
     ),
 )
 

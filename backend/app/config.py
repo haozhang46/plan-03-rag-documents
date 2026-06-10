@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     tenant_mode: bool = False
     jwt_secret: str | None = None
     rate_limit_rpm: int = 60
+    rag_backend: Literal["pgvector", "ragflow"] = "pgvector"
+    ragflow_base_url: str = "http://localhost"
+    ragflow_api_key: str | None = None
+    ragflow_top_k: int = 5
     admin_api_key: str | None = None
 
 @lru_cache
