@@ -1,7 +1,9 @@
 import type { ChatResponseChunk } from "~/types";
+import { useApiFetch } from "~/composables/useApiFetch";
 
 export function useChat() {
   const config = useRuntimeConfig();
+  const { apiFetch } = useApiFetch();
 
   async function* streamChat(
     threadId: string,
@@ -28,7 +30,7 @@ export function useChat() {
       body.dataset_ids = options.datasetIds;
     }
 
-    const res = await fetch(`${config.public.apiBase}/v1/chat`, {
+    const res = await apiFetch(`${config.public.apiBase}/v1/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

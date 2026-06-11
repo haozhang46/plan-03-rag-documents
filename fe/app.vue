@@ -3,3 +3,8 @@
     <NuxtPage />
   </div>
 </template>
+
+<script setup lang="ts">
+const auth = useAuthStore();
+onMounted(() => auth.loadFromStorage());
+</script>

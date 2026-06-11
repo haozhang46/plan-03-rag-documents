@@ -1,12 +1,8 @@
-import base64
-import binascii
-import hashlib
-import hmac
-import json
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request
 
+from app.auth.jwt import decode_jwt_payload
 from app.config import get_settings
 
 _TENANT_HEADER = "X-Tenant-ID"
@@ -26,7 +22,7 @@ def get_tenant_id(request: Request) -> str | None:
     if not secret or not token:
         return None
 
-    payload = _decode_jwt_payload(token, secret)
+    payload = decode_jwt_payload(token, secret)
     if not payload:
         return None
     tenant_id = payload.get("tenant_id")
@@ -40,42 +36,13 @@ def get_user_id_from_request(request: Request) -> str | None:
     secret = get_settings().jwt_secret
     if not secret:
         return None
-    payload = _decode_jwt_payload(auth[7:].strip(), secret)
+    payload = decode_jwt_payload(auth[7:].strip(), secret)
     if not payload:
         return None
     for key in ("sub", "user_id"):
         if payload.get(key):
             return str(payload[key])
     return None
-
-
-def _decode_jwt_payload(token: str, secret: str) -> dict | None:
-    try:
-        header_b64, payload_b64, signature_b64 = token.split(".")
-    except ValueError:
-        return None
-
-    signing_input = f"{header_b64}.{payload_b64}".encode()
-    expected_sig = hmac.new(
-        secret.encode(),
-        signing_input,
-        hashlib.sha256,
-    ).digest()
-    padding = "=" * (-len(signature_b64) % 4)
-    try:
-        actual_sig = base64.urlsafe_b64decode(signature_b64 + padding)
-    except (ValueError, binascii.Error):
-        return None
-    if not hmac.compare_digest(expected_sig, actual_sig):
-        return None
-
-    payload_padding = "=" * (-len(payload_b64) % 4)
-    try:
-        return json.loads(
-            base64.urlsafe_b64decode(payload_b64 + payload_padding).decode()
-        )
-    except (ValueError, json.JSONDecodeError, UnicodeDecodeError):
-        return None
 
 
 async def require_tenant(request: Request) -> str | None:

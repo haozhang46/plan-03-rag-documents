@@ -5,7 +5,8 @@ import pytest
 from fastapi import FastAPI
 from langgraph.checkpoint.memory import MemorySaver
 
-from app.api.routes import admin_ragflow, chat, flows, health, rag, sessions
+from app.api.routes import admin_ragflow, auth, chat, flows, health, rag, sessions
+from app.auth.users_store import MemoryUsersStore
 from app.config import get_settings
 from app.flows.registry import GraphRegistry
 from app.rag.bindings_store import MemoryRagflowBindingsStore
@@ -20,7 +21,9 @@ def test_app() -> FastAPI:
     application.state.graph = registry.get("default")
     application.state.session_store = MemorySessionStore()
     application.state.ragflow_bindings_store = MemoryRagflowBindingsStore()
+    application.state.users_store = MemoryUsersStore()
     application.include_router(health.router)
+    application.include_router(auth.router)
     application.include_router(chat.router)
     application.include_router(flows.router)
     application.include_router(sessions.router)

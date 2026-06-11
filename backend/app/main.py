@@ -8,8 +8,9 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from app.agent.graph import build_graph
 from app.flows.registry import GraphRegistry
-from app.api.routes import admin_ragflow, chat, flows, health, rag, sessions, skills
+from app.api.routes import admin_ragflow, auth, chat, flows, health, rag, sessions, skills
 from app.audit.store import MemoryAuditStore, PostgresAuditStore
+from app.auth.users_store import MemoryUsersStore, PostgresUsersStore
 from app.config import get_settings
 from app.middleware.rate_limit import RateLimitMiddleware, reset_rate_limiter
 from app.rag.bindings_store import MemoryRagflowBindingsStore, PostgresRagflowBindingsStore
@@ -31,6 +32,7 @@ async def lifespan(app: FastAPI):
         app.state.session_store = MemorySessionStore()
         app.state.audit_store = MemoryAuditStore()
         app.state.ragflow_bindings_store = MemoryRagflowBindingsStore()
+        app.state.users_store = MemoryUsersStore()
         logger.info("Checkpointer: MemorySaver (in-process, dev only)")
         yield
         return
@@ -48,6 +50,7 @@ async def lifespan(app: FastAPI):
                 app.state.session_store = PostgresSessionStore()
                 app.state.audit_store = PostgresAuditStore()
                 app.state.ragflow_bindings_store = PostgresRagflowBindingsStore()
+                app.state.users_store = PostgresUsersStore()
                 logger.info("Checkpointer: Postgres")
                 yield
             return
@@ -66,6 +69,7 @@ async def lifespan(app: FastAPI):
     app.state.session_store = MemorySessionStore()
     app.state.audit_store = MemoryAuditStore()
     app.state.ragflow_bindings_store = MemoryRagflowBindingsStore()
+    app.state.users_store = MemoryUsersStore()
     yield
 
 
@@ -84,6 +88,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(health.router)
+app.include_router(auth.router)
 app.include_router(chat.router)
 app.include_router(flows.router)
 app.include_router(rag.router)

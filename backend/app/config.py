@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     summary_token_threshold: int = 4000
     tenant_mode: bool = False
     jwt_secret: str | None = None
+    jwt_expires_minutes: int = 60 * 24 * 7
     rate_limit_rpm: int = 60
     rag_backend: Literal["ragflow"] = "ragflow"
     ragflow_base_url: str = "http://localhost"

@@ -34,5 +34,7 @@ async def create_tables() -> None:
             await conn.execute(_migration_sql("002_tenant.sql"))
         await conn.execute(_migration_sql("003_audit.sql"))
         await conn.execute(_migration_sql("004_ragflow_bindings.sql"))
+        if settings.tenant_mode:
+            await conn.execute(_migration_sql("005_users.sql"))
     finally:
         await conn.close()

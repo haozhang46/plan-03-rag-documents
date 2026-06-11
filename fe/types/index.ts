@@ -44,3 +44,17 @@ export interface Thread {
   starred?: boolean;
   sessionId?: string;
 }
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  tenant_id: string;
+  display_name: string;
+}
+
+export interface LoginResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+  user: AuthUser;
+}

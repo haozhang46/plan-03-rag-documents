@@ -1,4 +1,5 @@
 import { ref } from "vue";
+import { useApiFetch } from "~/composables/useApiFetch";
 
 export interface SessionItem {
   sessionId: string;
@@ -29,12 +30,13 @@ function toSessionItem(s: ApiSession): SessionItem {
 
 export function useSessions() {
   const config = useRuntimeConfig();
+  const { apiFetch } = useApiFetch();
   const sessions = ref<SessionItem[]>([]);
   const apiAvailable = ref(false);
 
   async function load(): Promise<boolean> {
     try {
-      const res = await fetch(`${config.public.apiBase}/v1/sessions`);
+      const res = await apiFetch(`${config.public.apiBase}/v1/sessions`);
       if (!res.ok) return false;
       const data: ApiSession[] = await res.json();
       sessions.value = data.map(toSessionItem);
@@ -47,7 +49,7 @@ export function useSessions() {
   }
 
   async function create(title?: string): Promise<SessionItem> {
-    const res = await fetch(`${config.public.apiBase}/v1/sessions`, {
+    const res = await apiFetch(`${config.public.apiBase}/v1/sessions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(title ? { title } : {}),
@@ -60,7 +62,7 @@ export function useSessions() {
   }
 
   async function remove(sessionId: string): Promise<void> {
-    const res = await fetch(
+    const res = await apiFetch(
       `${config.public.apiBase}/v1/sessions/${sessionId}`,
       { method: "DELETE" },
     );
@@ -71,7 +73,7 @@ export function useSessions() {
   async function toggleStar(sessionId: string): Promise<void> {
     const session = sessions.value.find((s) => s.sessionId === sessionId);
     if (!session) return;
-    const res = await fetch(
+    const res = await apiFetch(
       `${config.public.apiBase}/v1/sessions/${sessionId}`,
       {
         method: "PATCH",
@@ -86,7 +88,7 @@ export function useSessions() {
   }
 
   async function updateTitle(sessionId: string, title: string): Promise<void> {
-    const res = await fetch(
+    const res = await apiFetch(
       `${config.public.apiBase}/v1/sessions/${sessionId}`,
       {
         method: "PATCH",

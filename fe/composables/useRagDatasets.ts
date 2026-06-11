@@ -1,4 +1,5 @@
 import type { RagDataset } from "~/types";
+import { useApiFetch } from "~/composables/useApiFetch";
 
 const SELECTION_KEY = "rag:datasetSelection";
 
@@ -23,6 +24,7 @@ function saveSelection(threadId: string, ids: string[]) {
 
 export function useRagDatasets(activeThreadId: Ref<string | null>) {
   const config = useRuntimeConfig();
+  const { apiFetch } = useApiFetch();
   const datasets = ref<RagDataset[]>([]);
   const selectedIds = ref<string[]>([]);
   const loading = ref(false);
@@ -58,7 +60,7 @@ export function useRagDatasets(activeThreadId: Ref<string | null>) {
     loading.value = true;
     error.value = null;
     try {
-      const res = await fetch(`${config.public.apiBase}/v1/rag/datasets`);
+      const res = await apiFetch(`${config.public.apiBase}/v1/rag/datasets`);
       if (!res.ok) throw new Error(`List datasets failed: ${res.status}`);
       const data = (await res.json()) as { datasets: RagDataset[] };
       datasets.value = data.datasets;

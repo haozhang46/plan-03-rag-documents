@@ -1,9 +1,11 @@
 import type { SkillInfo } from "~/types";
+import { useApiFetch } from "~/composables/useApiFetch";
 
 const STORAGE_KEY = "debug:skill_names";
 
 export function useSkillsPicker() {
   const config = useRuntimeConfig();
+  const { apiFetch } = useApiFetch();
   const skills = ref<SkillInfo[]>([]);
   const selectedNames = ref<string[]>([]);
   const loading = ref(false);
@@ -39,7 +41,7 @@ export function useSkillsPicker() {
     loading.value = true;
     error.value = null;
     try {
-      const res = await fetch(`${config.public.apiBase}/v1/skills`);
+      const res = await apiFetch(`${config.public.apiBase}/v1/skills`);
       if (!res.ok) throw new Error(`List skills failed: ${res.status}`);
       const data = (await res.json()) as { skills: SkillInfo[] };
       skills.value = data.skills;

@@ -1,5 +1,28 @@
 # Agent Flow Backend
 
+## Authentication (login)
+
+When `TENANT_MODE=true`, set `JWT_SECRET` and create users via Admin API:
+
+```bash
+curl -X POST http://localhost:8000/v1/admin/users \
+  -H 'X-Admin-Key: <ADMIN_API_KEY>' \
+  -H 'Content-Type: application/json' \
+  -d '{"tenant_id":"demo","email":"you@example.com","password":"password123"}'
+```
+
+Login:
+
+```bash
+curl -X POST http://localhost:8000/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com","password":"password123"}'
+```
+
+Use the returned `access_token` as `Authorization: Bearer <token>` on `/v1/sessions`, `/v1/chat`, `/v1/rag/datasets`, etc.
+
+Optional: `JWT_EXPIRES_MINUTES` (default 10080 = 7 days).
+
 ## Setup
 
 ```bash

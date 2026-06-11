@@ -1,9 +1,11 @@
 import type { FlowInfo } from "~/types";
+import { useApiFetch } from "~/composables/useApiFetch";
 
 const STORAGE_KEY = "debug:flow_id";
 
 export function useFlows() {
   const config = useRuntimeConfig();
+  const { apiFetch } = useApiFetch();
   const flows = ref<FlowInfo[]>([]);
   const flowId = ref("default");
   const loading = ref(false);
@@ -24,7 +26,7 @@ export function useFlows() {
     loading.value = true;
     error.value = null;
     try {
-      const res = await fetch(`${config.public.apiBase}/v1/flows`);
+      const res = await apiFetch(`${config.public.apiBase}/v1/flows`);
       if (!res.ok) throw new Error(`List flows failed: ${res.status}`);
       const data = (await res.json()) as { flows: FlowInfo[] };
       flows.value = data.flows;
