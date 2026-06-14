@@ -39,12 +39,15 @@ def _build_config(
     flow_id: str,
     client_thread_id: str,
     ragflow_client=None,
+    access_token: str | None = None,
 ):
     configurable = {
         "thread_id": _checkpoint_thread_id(flow_id, client_thread_id),
     }
     if ragflow_client is not None:
         configurable["ragflow_client"] = ragflow_client
+    if access_token:
+        configurable["access_token"] = access_token
     return {"configurable": configurable}
 
 
@@ -119,8 +122,11 @@ async def chat(
         if resolved_dataset_ids is not None:
             req = req.model_copy(update={"dataset_ids": resolved_dataset_ids})
 
+    auth_header = request.headers.get("Authorization", "")
+    access_token = auth_header[7:].strip() if auth_header.startswith("Bearer ") else None
+
     config = _build_config(
-        request, req.flow_id, req.thread_id, ragflow_client=ragflow_client
+        request, req.flow_id, req.thread_id, ragflow_client=ragflow_client, access_token=access_token
     )
     state_input = _build_input(req, explicit_skill_names)
 

@@ -3,12 +3,18 @@ from pydantic import BaseModel, Field
 
 from app.auth.jwt import create_access_token
 from app.auth.passwords import hash_password, verify_password
-from app.auth.skill_admin import require_skill_admin
 from app.auth.tenant import get_tenant_id, get_user_id_from_request
-from app.auth.users_store import MemoryUsersStore
-from app.config import get_settings
+from app.auth.users_store import MemoryUsersStore, UserRecord
+from app.config import Settings, get_settings
+from app.integrations.pfm_client import provision_pfm_user
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1")
+
+DEFAULT_TENANT_ID = "default"
 
 
 class LoginRequest(BaseModel):
@@ -16,8 +22,7 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=8)
 
 
-class CreateUserRequest(BaseModel):
-    tenant_id: str = Field(min_length=1)
+class RegisterRequest(BaseModel):
     email: str = Field(min_length=3)
     password: str = Field(min_length=8)
     display_name: str = ""
@@ -44,16 +49,14 @@ def _users_store(request: Request) -> MemoryUsersStore:
     return store
 
 
-@router.post("/auth/login", response_model=LoginResponse)
-async def login(body: LoginRequest, request: Request) -> LoginResponse:
+def _require_jwt_secret() -> Settings:
     settings = get_settings()
     if not settings.jwt_secret:
         raise HTTPException(status_code=503, detail="JWT_SECRET not configured")
+    return settings
 
-    user = await _users_store(request).get_by_email(body.email)
-    if user is None or not verify_password(body.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="invalid credentials")
 
+def _login_response(user: UserRecord, settings: Settings) -> LoginResponse:
     expires_in = settings.jwt_expires_minutes * 60
     token = create_access_token(
         {
@@ -76,12 +79,42 @@ async def login(body: LoginRequest, request: Request) -> LoginResponse:
     )
 
 
+@router.post("/auth/register", response_model=LoginResponse, status_code=201)
+async def register(body: RegisterRequest, request: Request) -> LoginResponse:
+    settings = _require_jwt_secret()
+    display_name = body.display_name.strip() or body.email.split("@", 1)[0]
+    try:
+        user = await _users_store(request).create(
+            tenant_id=DEFAULT_TENANT_ID,
+            email=body.email,
+            password_hash=hash_password(body.password),
+            display_name=display_name,
+        )
+    except ValueError:
+        raise HTTPException(status_code=409, detail="email already registered") from None
+    try:
+        provision_pfm_user(
+            agent_user_id=user.id,
+            email=user.email,
+            display_name=user.display_name,
+        )
+    except Exception:
+        logger.warning("PFM provision failed for %s", user.email, exc_info=True)
+    return _login_response(user, settings)
+
+
+@router.post("/auth/login", response_model=LoginResponse)
+async def login(body: LoginRequest, request: Request) -> LoginResponse:
+    settings = _require_jwt_secret()
+    user = await _users_store(request).get_by_email(body.email)
+    if user is None or not verify_password(body.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="invalid credentials")
+    return _login_response(user, settings)
+
+
 @router.get("/auth/me", response_model=UserOut)
 async def me(request: Request) -> UserOut:
-    settings = get_settings()
-    if not settings.jwt_secret:
-        raise HTTPException(status_code=503, detail="JWT_SECRET not configured")
-
+    _require_jwt_secret()
     tenant_id = get_tenant_id(request)
     user_id = get_user_id_from_request(request)
     if not tenant_id or not user_id:
@@ -91,26 +124,6 @@ async def me(request: Request) -> UserOut:
     if user is None or user.tenant_id != tenant_id:
         raise HTTPException(status_code=401, detail="authentication required")
 
-    return UserOut(
-        id=user.id,
-        email=user.email,
-        tenant_id=user.tenant_id,
-        display_name=user.display_name,
-    )
-
-
-@router.post("/admin/users", status_code=201, response_model=UserOut)
-async def admin_create_user(body: CreateUserRequest, request: Request) -> UserOut:
-    require_skill_admin(request, tenant_id=None)
-    try:
-        user = await _users_store(request).create(
-            tenant_id=body.tenant_id,
-            email=body.email,
-            password_hash=hash_password(body.password),
-            display_name=body.display_name,
-        )
-    except ValueError:
-        raise HTTPException(status_code=409, detail="email already registered") from None
     return UserOut(
         id=user.id,
         email=user.email,

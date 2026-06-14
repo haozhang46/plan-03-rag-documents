@@ -1,4 +1,4 @@
-from app.flows.builders import default, knowledge, linear_rag, parallel, rag_flow, supervisor
+from app.flows.builders import default, finance, knowledge, linear_rag, parallel, rag_flow, supervisor
 from app.flows.specs import FlowSpec
 
 FLOW_SPECS: tuple[FlowSpec, ...] = (
@@ -37,6 +37,13 @@ FLOW_SPECS: tuple[FlowSpec, ...] = (
         title="RAG Flow (RAGFlow)",
         description="prepare → rag → chat via RAGFlow. Skips rag without dataset_ids.",
         builder=rag_flow.build,
+    ),
+    FlowSpec(
+        flow_id="finance-agent",
+        title="Personal Finance",
+        description="Finance Q&A and ledger actions via personalFinancial internal APIs.",
+        builder=finance.build,
+        default_skill_names=["personal-finance"],
     ),
 )
 

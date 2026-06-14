@@ -47,6 +47,8 @@ class Settings(BaseSettings):
     searxng_base_url: str = "http://localhost:8080"
     web_search_top_k: int = 5
     web_search_intent_mode: Literal["llm", "heuristic"] = "llm"
+    pfm_base_url: str | None = None
+    pfm_service_token: str | None = None
 
 @lru_cache
 def get_settings() -> Settings:
