@@ -1,8 +1,13 @@
 export default defineNuxtRouteMiddleware(async (to) => {
-  const auth = useAuthStore();
-  auth.loadFromStorage();
+  // Token lives in localStorage — auth checks are client-only.
+  if (import.meta.server) return;
 
-  if (to.path === "/login") {
+  const auth = useAuthStore();
+  if (!auth.accessToken) {
+    auth.loadFromStorage();
+  }
+
+  if (to.path === "/login" || to.path === "/register") {
     if (auth.isAuthenticated) return navigateTo("/");
     return;
   }

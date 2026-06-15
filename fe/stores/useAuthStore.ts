@@ -12,6 +12,7 @@ export const useAuthStore = defineStore("auth", () => {
   const isAuthenticated = computed(() => Boolean(accessToken.value));
 
   function loadFromStorage() {
+    if (import.meta.server) return;
     accessToken.value = localStorage.getItem(TOKEN_KEY);
     const raw = localStorage.getItem(USER_KEY);
     user.value = raw ? (JSON.parse(raw) as AuthUser) : null;
@@ -20,15 +21,19 @@ export const useAuthStore = defineStore("auth", () => {
   function setSession(token: string, authUser: AuthUser) {
     accessToken.value = token;
     user.value = authUser;
-    localStorage.setItem(TOKEN_KEY, token);
-    localStorage.setItem(USER_KEY, JSON.stringify(authUser));
+    if (import.meta.client) {
+      localStorage.setItem(TOKEN_KEY, token);
+      localStorage.setItem(USER_KEY, JSON.stringify(authUser));
+    }
   }
 
   function clearSession() {
     accessToken.value = null;
     user.value = null;
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
+    if (import.meta.client) {
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(USER_KEY);
+    }
   }
 
   function authHeaders(): Record<string, string> {
@@ -51,6 +56,29 @@ export const useAuthStore = defineStore("auth", () => {
     setSession(data.access_token, data.user);
   }
 
+  async function register(
+    email: string,
+    password: string,
+    displayName?: string,
+  ): Promise<void> {
+    const config = useRuntimeConfig();
+    const res = await fetch(`${config.public.apiBase}/v1/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email,
+        password,
+        display_name: displayName ?? "",
+      }),
+    });
+    if (!res.ok) {
+      const detail = (await res.json().catch(() => ({}))) as { detail?: string };
+      throw new Error(detail.detail || `Register failed: ${res.status}`);
+    }
+    const data = (await res.json()) as LoginResponse;
+    setSession(data.access_token, data.user);
+  }
+
   async function fetchMe(): Promise<boolean> {
     if (!accessToken.value) return false;
     const config = useRuntimeConfig();
@@ -62,7 +90,9 @@ export const useAuthStore = defineStore("auth", () => {
       return false;
     }
     user.value = (await res.json()) as AuthUser;
-    localStorage.setItem(USER_KEY, JSON.stringify(user.value));
+    if (import.meta.client) {
+      localStorage.setItem(USER_KEY, JSON.stringify(user.value));
+    }
     return true;
   }
 
@@ -79,6 +109,7 @@ export const useAuthStore = defineStore("auth", () => {
     clearSession,
     authHeaders,
     login,
+    register,
     fetchMe,
     logout,
   };

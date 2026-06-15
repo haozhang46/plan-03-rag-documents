@@ -1,5 +1,5 @@
 <template>
-  <div class="flex h-full">
+  <div class="flex flex-1 min-h-0">
     <!-- sidebar -->
     <aside class="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col flex-shrink-0">
       <DebugToolbar

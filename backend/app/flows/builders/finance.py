@@ -1,6 +1,6 @@
 from langgraph.graph import END, START, StateGraph
 
-from app.agent.nodes.finance_tools import finance_agent_node, prepare_then_finance
+from app.agent.nodes.finance_tools import finance_agent_node
 from app.agent.nodes.prepare import prepare_node
 from app.agent.state import AgentState
 

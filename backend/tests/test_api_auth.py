@@ -62,23 +62,36 @@ def test_login_wrong_password(auth_client, monkeypatch):
     get_settings.cache_clear()
 
 
-def test_admin_create_user(auth_client, monkeypatch):
-    monkeypatch.setenv("ADMIN_API_KEY", "admin-key")
+def test_register_and_login(auth_client, monkeypatch):
+    monkeypatch.setenv("JWT_SECRET", "login-secret")
     from app.config import get_settings
 
     get_settings.cache_clear()
     resp = auth_client.post(
-        "/v1/admin/users",
-        headers={"X-Admin-Key": "admin-key"},
+        "/v1/auth/register",
         json={
-            "tenant_id": "tenant-a",
             "email": "new@example.com",
             "password": "password123",
             "display_name": "New User",
         },
     )
     assert resp.status_code == 201
-    assert resp.json()["email"] == "new@example.com"
+    data = resp.json()
+    assert data["access_token"]
+    assert data["user"]["email"] == "new@example.com"
+    assert data["user"]["tenant_id"] == "default"
+
+    dup = auth_client.post(
+        "/v1/auth/register",
+        json={"email": "new@example.com", "password": "password123"},
+    )
+    assert dup.status_code == 409
+
+    login = auth_client.post(
+        "/v1/auth/login",
+        json={"email": "new@example.com", "password": "password123"},
+    )
+    assert login.status_code == 200
     get_settings.cache_clear()
 
 

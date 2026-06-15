@@ -13,6 +13,7 @@ def test_load_all_registers_builtin_flows():
         "parallel",
         "knowledge-rag",
         "rag-flow",
+        "finance-agent",
     }
 
 
