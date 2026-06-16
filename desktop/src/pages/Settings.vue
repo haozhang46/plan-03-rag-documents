@@ -1,0 +1,47 @@
+<script setup lang="ts">
+import { onMounted, ref } from "vue";
+
+const emit = defineEmits<{ back: [] }>();
+
+const apiKeyStatus = ref("");
+const apiKeyInput = ref("");
+
+onMounted(async () => {
+  apiKeyStatus.value = await window.desktop.getApiKeyStatus();
+});
+
+async function saveApiKey() {
+  await window.desktop.setApiKey(apiKeyInput.value);
+  apiKeyInput.value = "";
+  apiKeyStatus.value = await window.desktop.getApiKeyStatus();
+}
+
+async function clearApiKey() {
+  await window.desktop.clearApiKey();
+  apiKeyStatus.value = "";
+}
+</script>
+
+<template>
+  <div class="max-w-lg mx-auto p-8">
+    <button class="text-sm text-blue-600 mb-6" @click="emit('back')">← Back</button>
+    <h1 class="text-xl font-semibold mb-4">Settings</h1>
+
+    <section class="mb-8">
+      <h2 class="text-sm font-medium mb-2">DeepSeek API Key</h2>
+      <p class="text-sm text-gray-500 mb-3">
+        Status: {{ apiKeyStatus || "not set" }}
+      </p>
+      <input
+        v-model="apiKeyInput"
+        type="password"
+        class="input-field mb-3 w-full"
+        placeholder="sk-..."
+      />
+      <div class="flex gap-2">
+        <button class="btn-primary" @click="saveApiKey">Save Key</button>
+        <button class="btn-primary bg-gray-500" @click="clearApiKey">Clear</button>
+      </div>
+    </section>
+  </div>
+</template>

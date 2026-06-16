@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld("desktop", {
     ipcRenderer.invoke("settings:setResourceServerUrl", url) as Promise<boolean>,
   getWorkspace: () => ipcRenderer.invoke("workspace:get") as Promise<string>,
   pickWorkspace: () => ipcRenderer.invoke("workspace:pick") as Promise<string>,
+  pickProjectDirectory: () =>
+    ipcRenderer.invoke("project:pickDirectory") as Promise<string>,
   initProject: (dir: string) => ipcRenderer.invoke("project:init", dir) as Promise<string>,
   openProject: (dir: string) => ipcRenderer.invoke("project:open", dir) as Promise<string>,
   getRecentProjects: () => ipcRenderer.invoke("project:recent") as Promise<string[]>,
@@ -24,6 +26,7 @@ export type DesktopApi = {
   setResourceServerUrl: (url: string) => Promise<boolean>;
   getWorkspace: () => Promise<string>;
   pickWorkspace: () => Promise<string>;
+  pickProjectDirectory: () => Promise<string>;
   initProject: (dir: string) => Promise<string>;
   openProject: (dir: string) => Promise<string>;
   getRecentProjects: () => Promise<string[]>;

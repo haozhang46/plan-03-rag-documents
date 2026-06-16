@@ -137,6 +137,13 @@ app.whenReady().then(() => {
     if (result.canceled || !result.filePaths[0]) return workspaceRoot;
     return openProject(result.filePaths[0]);
   });
+  ipcMain.handle("project:pickDirectory", async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ["openDirectory", "createDirectory"],
+    });
+    if (result.canceled || !result.filePaths[0]) return "";
+    return result.filePaths[0];
+  });
 
   ipcMain.handle("project:init", async (_e, dir: string) => {
     await initProjectFromTemplate(dir, "default-dev-cicd");
