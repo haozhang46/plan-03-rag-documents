@@ -19,6 +19,14 @@ export class StepRunner {
     return cloneRunState(this.state);
   }
 
+  setCurrentStepId(stepId: string): void {
+    const exists = this.workflow.steps.some((s) => s.id === stepId);
+    if (!exists) {
+      throw new Error(`Unknown step: ${stepId}`);
+    }
+    this.state.currentStepId = stepId;
+  }
+
   getNextStepId(currentId: string): string | null {
     const edge = this.workflow.edges.find((e) => e.from === currentId);
     return edge?.to ?? null;
