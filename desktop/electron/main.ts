@@ -1,54 +1,90 @@
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
+import { startAgentServer } from "./agent/server";
 import { startExecutorServer } from "./executor/server";
 import { clearApiKey, loadApiKey, saveApiKey } from "./settings/keychain";
+import { initProjectFromTemplate } from "./workflow/loader";
 
-const SIDECAR_PORT = 8765;
+const AGENT_PORT = 8765;
 const EXECUTOR_PORT = 17351;
+const MAX_RECENT = 10;
 
-let sidecar: ChildProcessWithoutNullStreams | null = null;
+const AGENTFLOW_DIR = path.join(os.homedir(), ".agentflow");
+const RECENT_FILE = path.join(AGENTFLOW_DIR, "recent.json");
+const SETTINGS_FILE = path.join(AGENTFLOW_DIR, "settings.json");
+
+let agentServer: ReturnType<typeof startAgentServer> | null = null;
 let workspaceRoot = process.cwd();
 
-function backendDir(): string {
-  return path.resolve(__dirname, "../../../backend");
-}
-
-function pythonBin(): string {
-  return process.env.PYTHON || "python3";
-}
-
-function spawnSidecar(): void {
-  if (sidecar) {
-    sidecar.kill();
-    sidecar = null;
+function restartAgentServer(): void {
+  if (agentServer) {
+    agentServer.close();
+    agentServer = null;
   }
-
-  const key = loadApiKey();
-  if (!key) return;
-
-  sidecar = spawn(
-    pythonBin(),
-    ["-m", "app.desktop"],
-    {
-      cwd: backendDir(),
-      env: {
-        ...process.env,
-        LOCAL_MODE: "1",
-        DEEPSEEK_API_KEY: key,
-        DEFAULT_LLM_PROVIDER: "deepseek",
-        DEFAULT_MODEL: "deepseek-chat",
-        DESKTOP_EXECUTOR_URL: `http://127.0.0.1:${EXECUTOR_PORT}`,
-        WORKSPACE_ROOT: workspaceRoot,
-        SIDECAR_PORT: String(SIDECAR_PORT),
-        CHECKPOINTER: "memory",
-      },
-    },
-  );
-
-  sidecar.stderr.on("data", (chunk) => {
-    console.error("[sidecar]", chunk.toString());
+  agentServer = startAgentServer({
+    port: AGENT_PORT,
+    getApiKey: loadApiKey,
+    getWorkspaceRoot: () => workspaceRoot,
   });
+}
+
+async function ensureAgentflowDir(): Promise<void> {
+  await fs.mkdir(AGENTFLOW_DIR, { recursive: true });
+}
+
+async function loadRecentProjects(): Promise<string[]> {
+  try {
+    await ensureAgentflowDir();
+    const raw = await fs.readFile(RECENT_FILE, "utf8");
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((entry): entry is string => typeof entry === "string").slice(0, MAX_RECENT);
+  } catch {
+    return [];
+  }
+}
+
+async function saveRecentProjects(projects: string[]): Promise<void> {
+  await ensureAgentflowDir();
+  await fs.writeFile(RECENT_FILE, JSON.stringify(projects.slice(0, MAX_RECENT), null, 2));
+}
+
+async function addRecentProject(dir: string): Promise<void> {
+  const normalized = path.resolve(dir);
+  const recent = await loadRecentProjects();
+  const filtered = recent.filter((entry) => entry !== normalized);
+  filtered.unshift(normalized);
+  await saveRecentProjects(filtered);
+}
+
+async function openProject(dir: string): Promise<string> {
+  workspaceRoot = path.resolve(dir);
+  await addRecentProject(workspaceRoot);
+  restartAgentServer();
+  return workspaceRoot;
+}
+
+type AgentflowSettings = {
+  resourceServerUrl?: string;
+};
+
+async function loadSettings(): Promise<AgentflowSettings> {
+  try {
+    await ensureAgentflowDir();
+    const raw = await fs.readFile(SETTINGS_FILE, "utf8");
+    const parsed = JSON.parse(raw) as AgentflowSettings;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+async function saveSettings(partial: AgentflowSettings): Promise<void> {
+  await ensureAgentflowDir();
+  const current = await loadSettings();
+  await fs.writeFile(SETTINGS_FILE, JSON.stringify({ ...current, ...partial }, null, 2));
 }
 
 function createWindow(): BrowserWindow {
@@ -72,33 +108,47 @@ function createWindow(): BrowserWindow {
 
 app.whenReady().then(() => {
   startExecutorServer(EXECUTOR_PORT);
-  spawnSidecar();
+  restartAgentServer();
   createWindow();
 
   ipcMain.handle("settings:getApiKey", () => (loadApiKey() ? "***configured***" : ""));
   ipcMain.handle("settings:setApiKey", (_e, key: string) => {
     saveApiKey(key.trim());
-    spawnSidecar();
+    restartAgentServer();
     return true;
   });
   ipcMain.handle("settings:clearApiKey", () => {
     clearApiKey();
-    if (sidecar) sidecar.kill();
-    sidecar = null;
+    restartAgentServer();
     return true;
   });
+  ipcMain.handle("settings:getResourceServerUrl", async () => {
+    const settings = await loadSettings();
+    return settings.resourceServerUrl ?? "";
+  });
+  ipcMain.handle("settings:setResourceServerUrl", async (_e, url: string) => {
+    await saveSettings({ resourceServerUrl: url.trim() });
+    return true;
+  });
+
   ipcMain.handle("workspace:get", () => workspaceRoot);
   ipcMain.handle("workspace:pick", async () => {
     const result = await dialog.showOpenDialog({ properties: ["openDirectory"] });
     if (result.canceled || !result.filePaths[0]) return workspaceRoot;
-    workspaceRoot = result.filePaths[0];
-    spawnSidecar();
-    return workspaceRoot;
+    return openProject(result.filePaths[0]);
   });
-  ipcMain.handle("sidecar:port", () => SIDECAR_PORT);
+
+  ipcMain.handle("project:init", async (_e, dir: string) => {
+    await initProjectFromTemplate(dir, "default-dev-cicd");
+    return openProject(dir);
+  });
+  ipcMain.handle("project:open", async (_e, dir: string) => openProject(dir));
+  ipcMain.handle("project:recent", () => loadRecentProjects());
+
+  ipcMain.handle("sidecar:port", () => AGENT_PORT);
 });
 
 app.on("window-all-closed", () => {
-  if (sidecar) sidecar.kill();
+  agentServer?.close();
   if (process.platform !== "darwin") app.quit();
 });
