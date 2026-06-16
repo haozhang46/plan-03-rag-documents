@@ -5,9 +5,11 @@ const emit = defineEmits<{ back: [] }>();
 
 const apiKeyStatus = ref("");
 const apiKeyInput = ref("");
+const resourceServerUrl = ref("");
 
 onMounted(async () => {
   apiKeyStatus.value = await window.desktop.getApiKeyStatus();
+  resourceServerUrl.value = await window.desktop.getResourceServerUrl();
 });
 
 async function saveApiKey() {
@@ -19,6 +21,10 @@ async function saveApiKey() {
 async function clearApiKey() {
   await window.desktop.clearApiKey();
   apiKeyStatus.value = "";
+}
+
+async function saveResourceServerUrl() {
+  await window.desktop.setResourceServerUrl(resourceServerUrl.value);
 }
 </script>
 
@@ -42,6 +48,21 @@ async function clearApiKey() {
         <button class="btn-primary" @click="saveApiKey">Save Key</button>
         <button class="btn-primary bg-gray-500" @click="clearApiKey">Clear</button>
       </div>
+    </section>
+
+    <section>
+      <h2 class="text-sm font-medium mb-2">Resource Server URL</h2>
+      <p class="text-sm text-gray-500 mb-3">
+        Optional RPC server for provisioning project resources. Leave empty to use the local
+        docker-compose fallback.
+      </p>
+      <input
+        v-model="resourceServerUrl"
+        type="url"
+        class="input-field mb-3 w-full"
+        placeholder="http://localhost:9000"
+      />
+      <button class="btn-primary" @click="saveResourceServerUrl">Save URL</button>
     </section>
   </div>
 </template>
