@@ -35,6 +35,19 @@ export interface LangflowJson {
   resources?: Array<{ type: string; name: string; optional?: boolean }>;
 }
 
+export async function compileLangflowToYaml(
+  langflowJson: LangflowJson,
+  projectRoot?: string,
+): Promise<string> {
+  const content = yaml.stringify(compileLangflowJson(langflowJson));
+  if (projectRoot) {
+    const dest = path.join(projectRoot, ".agentflow/workflow.yaml");
+    await fs.mkdir(path.dirname(dest), { recursive: true });
+    await fs.writeFile(dest, content, "utf8");
+  }
+  return content;
+}
+
 export function compileLangflowJson(langflowJson: LangflowJson): WorkflowDefinition {
   const nodes = langflowJson.nodes ?? [];
   const steps = nodes.map((node) => {
@@ -84,9 +97,6 @@ export async function compileAndWriteWorkflow(
   projectRoot: string,
   langflowJson: LangflowJson,
 ): Promise<WorkflowDefinition> {
-  const workflow = compileLangflowJson(langflowJson);
-  const dest = path.join(projectRoot, ".agentflow/workflow.yaml");
-  await fs.mkdir(path.dirname(dest), { recursive: true });
-  await fs.writeFile(dest, yaml.stringify(workflow), "utf8");
-  return workflow;
+  await compileLangflowToYaml(langflowJson, projectRoot);
+  return compileLangflowJson(langflowJson);
 }
