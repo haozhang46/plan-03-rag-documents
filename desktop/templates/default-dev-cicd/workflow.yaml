@@ -1,0 +1,79 @@
+version: 1
+id: default-dev-cicd
+title: Dev to CI/CD Pipeline
+steps:
+  - id: prd
+    title: PRD
+    executor: deepseek
+    agents_md: null
+    skills: [brainstorming]
+    prompt_template: prompts/prd.md
+    outputs: [docs/PRD.md]
+    gate: manual
+  - id: architecture
+    title: Architecture
+    executor: deepseek
+    agents_md: null
+    skills: [writing-plans]
+    prompt_template: prompts/architecture.md
+    outputs: [docs/architecture.md, AGENTS.md]
+    gate: manual
+  - id: fe-dev
+    title: Frontend Development
+    executor: claude-code
+    agents_md: null
+    skills: []
+    prompt_template: prompts/fe-dev.md
+    outputs: [fe/]
+    gate: manual
+  - id: be-dev
+    title: Backend Development
+    executor: deepseek
+    agents_md: null
+    skills: [test-driven-development]
+    prompt_template: prompts/be-dev.md
+    outputs: [backend/]
+    gate: manual
+  - id: test
+    title: Test
+    executor: deepseek
+    agents_md: null
+    skills: []
+    prompt_template: prompts/test.md
+    outputs: [test-report.md]
+    gate: manual
+  - id: review
+    title: Code Review
+    executor: deepseek
+    agents_md: null
+    skills: [receiving-code-review]
+    prompt_template: prompts/review.md
+    outputs: [review-notes.md]
+    gate: manual
+  - id: test-2
+    title: Regression Test
+    executor: deepseek
+    agents_md: null
+    skills: []
+    prompt_template: prompts/test-2.md
+    outputs: [regression-report.md]
+    gate: manual
+  - id: cicd
+    title: CI/CD
+    executor: deepseek
+    agents_md: null
+    skills: []
+    prompt_template: prompts/cicd.md
+    outputs: [.github/workflows/, Dockerfile]
+    gate: manual
+edges:
+  - { from: prd, to: architecture }
+  - { from: architecture, to: fe-dev }
+  - { from: fe-dev, to: be-dev }
+  - { from: be-dev, to: test }
+  - { from: test, to: review }
+  - { from: review, to: test-2 }
+  - { from: test-2, to: cicd }
+resources:
+  - { type: mysql, name: app-db }
+  - { type: redis, name: cache }

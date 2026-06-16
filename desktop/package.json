@@ -12,7 +12,9 @@
   "dependencies": {
     "@agent-flow/shared-ui": "workspace:*",
     "marked": "^18.0.4",
-    "vue": "^3.5.0"
+    "vue": "^3.5.0",
+    "yaml": "^2.7.0",
+    "zod": "^3.24.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
