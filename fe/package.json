@@ -28,6 +28,7 @@
     "vue": "^3.5.0"
   },
   "dependencies": {
+    "@agent-flow/shared-ui": "workspace:*",
     "marked": "^18.0.4"
   }
 }

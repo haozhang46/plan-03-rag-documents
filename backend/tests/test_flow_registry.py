@@ -14,6 +14,7 @@ def test_load_all_registers_builtin_flows():
         "knowledge-rag",
         "rag-flow",
         "finance-agent",
+        "general-react",
     }
 
 

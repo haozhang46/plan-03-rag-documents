@@ -43,3 +43,5 @@ class AgentState(TypedDict):
     use_web_search: NotRequired[bool]
     web_search_reason: NotRequired[str]
     web_sources: NotRequired[list[str]]
+    react_iteration: NotRequired[int]
+    workspace_root: NotRequired[str]

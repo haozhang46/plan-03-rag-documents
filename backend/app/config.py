@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     web_search_intent_mode: Literal["llm", "heuristic"] = "llm"
     pfm_base_url: str | None = None
     pfm_service_token: str | None = None
+    local_mode: bool = False
+    desktop_executor_url: str = "http://127.0.0.1:17351"
+    workspace_root: str = "."
+    react_max_iterations: int = 25
+    sidecar_port: int = 8765
 
 @lru_cache
 def get_settings() -> Settings:

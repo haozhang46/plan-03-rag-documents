@@ -1,4 +1,13 @@
-from app.flows.builders import default, finance, knowledge, linear_rag, parallel, rag_flow, supervisor
+from app.flows.builders import (
+    default,
+    finance,
+    general_react,
+    knowledge,
+    linear_rag,
+    parallel,
+    rag_flow,
+    supervisor,
+)
 from app.flows.specs import FlowSpec
 
 FLOW_SPECS: tuple[FlowSpec, ...] = (
@@ -44,6 +53,12 @@ FLOW_SPECS: tuple[FlowSpec, ...] = (
         description="Finance Q&A and ledger actions via personalFinancial internal APIs.",
         builder=finance.build,
         default_skill_names=["personal-finance"],
+    ),
+    FlowSpec(
+        flow_id="general-react",
+        title="General ReAct",
+        description="ReAct loop with desktop git/shell tools via local executor.",
+        builder=general_react.build,
     ),
 )
 

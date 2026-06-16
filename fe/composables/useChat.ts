@@ -1,3 +1,4 @@
+import { parseSseStream } from "@agent-flow/shared-ui";
 import type { ChatResponseChunk } from "~/types";
 import { useApiFetch } from "~/composables/useApiFetch";
 
@@ -40,24 +41,9 @@ export function useChat() {
       throw new Error(`Chat request failed: ${res.status}`);
     }
 
-    const reader = res.body.getReader();
-    const dec = new TextDecoder();
-    let buf = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, { stream: true });
-      const lines = buf.split("\n");
-      buf = lines.pop() || "";
-      for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          try {
-            yield JSON.parse(line.slice(6));
-          } catch {
-            // skip unparseable chunks
-          }
-        }
+    for await (const event of parseSseStream(res.body)) {
+      if (event.type === "message") {
+        yield event.chunk;
       }
     }
   }

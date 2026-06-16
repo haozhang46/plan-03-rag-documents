@@ -4,6 +4,9 @@ export default defineNuxtConfig({
   modules: ["@unocss/nuxt", "@pinia/nuxt"],
   css: ["@unocss/reset/tailwind.css"],
   typescript: { strict: true },
+  build: {
+    transpile: ["@agent-flow/shared-ui"],
+  },
   runtimeConfig: {
     public: {
       // Dev: empty → relative /v1/* via Vite proxy; prod: set NUXT_PUBLIC_API_BASE

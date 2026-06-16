@@ -1,0 +1,9 @@
+{
+  "name": "agent-flow-container",
+  "private": true,
+  "scripts": {
+    "test:backend": "cd backend && pytest -v",
+    "test:fe": "pnpm --filter agent-flow-fe test",
+    "test:desktop": "pnpm --filter agent-flow-desktop test"
+  }
+}

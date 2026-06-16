@@ -30,7 +30,7 @@ dependencies = [
 dev = ["pytest>=8.0", "pytest-asyncio>=0.24", "anyio>=4.0"]
 
 [tool.setuptools]
-packages = ["app", "app.agent", "app.agent.graphs", "app.agent.nodes", "app.agent.models", "app.agent.tools", "app.api", "app.api.routes", "app.auth", "app.llm", "app.skills", "app.rag", "app.web", "app.observability"]
+packages = ["app", "app.agent", "app.agent.graphs", "app.agent.nodes", "app.agent.models", "app.agent.tools", "app.agent.tools.desktop", "app.api", "app.api.routes", "app.auth", "app.desktop", "app.llm", "app.skills", "app.rag", "app.web", "app.observability"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
