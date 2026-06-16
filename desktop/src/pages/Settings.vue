@@ -53,8 +53,9 @@ async function saveResourceServerUrl() {
     <section>
       <h2 class="text-sm font-medium mb-2">Resource Server URL</h2>
       <p class="text-sm text-gray-500 mb-3">
-        Optional RPC server for provisioning project resources. Leave empty to use the local
-        docker-compose fallback.
+        Optional team resource config server. AI uses connection details when generating backend
+        configs (application.yml, .env). Leave empty to use project
+        .agentflow/resource-instances.yaml only.
       </p>
       <input
         v-model="resourceServerUrl"

@@ -6,6 +6,7 @@ export async function buildSystemPrompt(
   agentsMdPath: string | null | undefined,
   skillNames: string[],
   workspaceRoot: string,
+  resourceContext?: string,
 ): Promise<string> {
   const parts: string[] = [];
 
@@ -23,6 +24,10 @@ export async function buildSystemPrompt(
   if (skillNames.length > 0) {
     const bodies = await loadSkillBodies(skillNames);
     parts.push(...bodies);
+  }
+
+  if (resourceContext?.trim()) {
+    parts.push(resourceContext.trim());
   }
 
   return parts.filter(Boolean).join("\n\n---\n\n");

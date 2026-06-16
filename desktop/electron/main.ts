@@ -17,6 +17,13 @@ const SETTINGS_FILE = path.join(AGENTFLOW_DIR, "settings.json");
 
 let agentServer: ReturnType<typeof startAgentServer> | null = null;
 let workspaceRoot = process.cwd();
+let resourceServerUrl: string | null = null;
+
+async function refreshResourceServerUrl(): Promise<void> {
+  const settings = await loadSettings();
+  const url = settings.resourceServerUrl?.trim();
+  resourceServerUrl = url || null;
+}
 
 function restartAgentServer(): void {
   if (agentServer) {
@@ -27,6 +34,7 @@ function restartAgentServer(): void {
     port: AGENT_PORT,
     getApiKey: loadApiKey,
     getWorkspaceRoot: () => workspaceRoot,
+    getResourceServerUrl: () => resourceServerUrl,
   });
 }
 
@@ -106,7 +114,8 @@ function createWindow(): BrowserWindow {
   return win;
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  await refreshResourceServerUrl();
   startExecutorServer(EXECUTOR_PORT);
   restartAgentServer();
   createWindow();
@@ -128,6 +137,7 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("settings:setResourceServerUrl", async (_e, url: string) => {
     await saveSettings({ resourceServerUrl: url.trim() });
+    await refreshResourceServerUrl();
     return true;
   });
 

@@ -1,3 +1,8 @@
+import {
+  formatResourceContextForPrompt,
+  resolveResources,
+  stepNeedsResourceContext,
+} from "../resources/resolver";
 import { getExecutor } from "../executors/registry";
 import type { StepEvent } from "../executors/types";
 import { buildSystemPrompt, renderPromptTemplate } from "./prompt";
@@ -11,6 +16,7 @@ export class StepRunner {
     private projectRoot: string,
     private workflow: WorkflowDefinition,
     private getApiKey: () => string | null,
+    private getResourceServerUrl?: () => string | null,
   ) {
     this.state = createInitialState(workflow);
   }
@@ -50,7 +56,22 @@ export class StepRunner {
     }
 
     try {
-      const systemPrompt = await buildSystemPrompt(step.agents_md, step.skills, this.projectRoot);
+      let resourceContext: string | undefined;
+      if (stepNeedsResourceContext(stepId, step.requires_resources)) {
+        const serverUrl = this.getResourceServerUrl?.() ?? undefined;
+        const resolved = await resolveResources(
+          this.projectRoot,
+          serverUrl ?? undefined,
+        );
+        resourceContext = formatResourceContextForPrompt(resolved);
+      }
+
+      const systemPrompt = await buildSystemPrompt(
+        step.agents_md,
+        step.skills,
+        this.projectRoot,
+        resourceContext,
+      );
       const userPrompt = step.prompt_template
         ? await renderPromptTemplate(step.prompt_template, this.projectRoot)
         : step.title;

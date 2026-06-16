@@ -106,4 +106,16 @@ describe("agent server workflow API", () => {
     expect(state.workflowId).toBe("default-dev-cicd");
     expect(state.currentStepId).toBe("prd");
   });
+
+  it("GET /v1/resources/context returns resolved resources", async () => {
+    const res = await request(port, "GET", "/v1/resources/context");
+    expect(res.status).toBe(200);
+    const context = JSON.parse(res.body) as {
+      markdown: string;
+      resources: Array<{ type: string; name: string }>;
+    };
+    expect(context.resources.length).toBeGreaterThan(0);
+    expect(context.resources.some((r) => r.name === "app-db")).toBe(true);
+    expect(context.markdown).toContain("## Available Server Resources");
+  });
 });

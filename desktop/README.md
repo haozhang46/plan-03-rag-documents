@@ -95,7 +95,9 @@ v1 ships a compiler + editor shell (full Langflow visual bundle is planned for v
 
 Compiler source: `electron/workflow/compiler.ts` (`compileLangflowJson`, `compileLangflowToYaml`).
 
-## Resource Server (Optional)
+## Resource Config (Optional)
+
+Resource Server provides **read-only connection config** for the LLM — not dynamic provisioning.
 
 Declare resources in `.agentflow/resources.yaml`:
 
@@ -105,17 +107,35 @@ resources:
   - { type: redis, name: cache }
 ```
 
+Optional local overrides in `.agentflow/resource-instances.yaml`:
+
+```yaml
+instances:
+  app-db:
+    host: localhost
+    port: 3306
+    database: myapp
+    user: root
+    dsn: mysql://root@localhost:3306/myapp
+  cache:
+    host: localhost
+    port: 6379
+    dsn: redis://localhost:6379/0
+```
+
 **Settings → Resource Server URL** (optional):
 
-- **Empty** — `resourceBridge` writes/uses a local `docker-compose.yml` fallback and returns localhost connection info.
-- **Set** — provisions via gRPC Resource Server stub (`Provision` RPC); URL is persisted in Desktop settings.
+- **Empty** — use project `.agentflow/resource-instances.yaml` only (declaration-only context if missing).
+- **Set** — fetch `GET /v1/resources/config` from the team server; local overrides win per instance name.
+
+Resolved context is injected into workflow steps (`be-dev`, `cicd`, `test`) and exposed at `GET /v1/resources/context`.
 
 ## Architecture
 
 - `electron/main.ts` — spawns Python sidecar (`python -m app.desktop`), executor HTTP `:17351`, workflow agent HTTP server
 - `electron/workflow/` — loader, compiler, stepRunner, checkpoint
 - `electron/executors/` — deepseek + claude-code registry
-- `electron/resources/` — resourceBridge (RPC or docker-compose fallback)
+- `electron/resources/` — resourceResolver (declarations + server/local merge → LLM context)
 - `backend/app/desktop/` — LOCAL_MODE FastAPI, `general-react` ReAct flow
 - `packages/shared-ui` — shared chat UI with `fe/`
 

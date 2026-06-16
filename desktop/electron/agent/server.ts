@@ -6,6 +6,7 @@ import { compileAndWriteWorkflow } from "../workflow/compiler";
 import {
   advanceWorkflow,
   clearRunner,
+  getResourceContext,
   getWorkflowState,
   runWorkflowStep,
 } from "../workflow/workflowService";
@@ -14,6 +15,7 @@ export type AgentServerOptions = {
   port: number;
   getApiKey: () => string | null;
   getWorkspaceRoot: () => string;
+  getResourceServerUrl?: () => string | null;
 };
 
 function writeSse(res: http.ServerResponse, event: string, data: unknown): void {
@@ -38,7 +40,7 @@ function jsonResponse(res: http.ServerResponse, status: number, data: unknown): 
 }
 
 export function startAgentServer(options: AgentServerOptions): http.Server {
-  const { port, getApiKey, getWorkspaceRoot } = options;
+  const { port, getApiKey, getWorkspaceRoot, getResourceServerUrl } = options;
 
   function syncAgent(): boolean {
     const apiKey = getApiKey();
@@ -96,8 +98,19 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
 
     if (req.method === "GET" && url === "/v1/workflow/state") {
       try {
-        const state = await getWorkflowState(getWorkspaceRoot(), getApiKey);
+        const state = await getWorkflowState(getWorkspaceRoot(), getApiKey, getResourceServerUrl);
         jsonResponse(res, 200, state);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        jsonResponse(res, 500, { detail: message });
+      }
+      return;
+    }
+
+    if (req.method === "GET" && url === "/v1/resources/context") {
+      try {
+        const context = await getResourceContext(getWorkspaceRoot(), getResourceServerUrl);
+        jsonResponse(res, 200, context);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         jsonResponse(res, 500, { detail: message });
@@ -132,7 +145,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       }
 
       try {
-        const state = await advanceWorkflow(getWorkspaceRoot(), getApiKey, action);
+        const state = await advanceWorkflow(getWorkspaceRoot(), getApiKey, action, getResourceServerUrl);
         jsonResponse(res, 200, state);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -189,7 +202,12 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       });
 
       try {
-        const events = runWorkflowStep(getWorkspaceRoot(), getApiKey, payload.stepId);
+        const events = runWorkflowStep(
+          getWorkspaceRoot(),
+          getApiKey,
+          payload.stepId,
+          getResourceServerUrl,
+        );
         for await (const event of events) {
           writeSse(res, event.type, event);
         }
