@@ -10,6 +10,7 @@ import {
   getWorkflowState,
   runWorkflowStep,
 } from "../workflow/workflowService";
+import { handleLangflowRoutes } from "../langflow/routes";
 
 export type AgentServerOptions = {
   port: number;
@@ -64,6 +65,12 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
     }
 
     const url = req.url?.split("?")[0];
+
+    if (
+      await handleLangflowRoutes(req, res, url ?? "", req.method ?? "GET", getWorkspaceRoot)
+    ) {
+      return;
+    }
 
     if (req.method === "GET" && url === "/health") {
       jsonResponse(res, 200, { status: "ok", mode: "desktop-js" });

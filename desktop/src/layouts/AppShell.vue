@@ -53,7 +53,7 @@ const navItems: { id: AppView; label: string }[] = [
     <ProjectHomePage v-if="view === 'home'" @opened="onProjectOpened" />
     <WorkflowRunPage v-else-if="view === 'workflow'" :workspace="workspace" />
     <ChatPage v-else-if="view === 'chat'" v-model:workspace="workspace" />
-    <LangflowEditorPage v-else-if="view === 'langflow'" />
+    <LangflowEditorPage v-else-if="view === 'langflow'" :workspace="workspace" />
     <SettingsPage v-else @back="view = 'home'" />
   </div>
 </template>

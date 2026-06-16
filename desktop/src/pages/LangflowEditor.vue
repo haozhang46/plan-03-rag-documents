@@ -1,136 +1,190 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { onMounted, ref, watch } from "vue";
+import LangflowFlowSidebar from "../components/LangflowFlowSidebar.vue";
+import LangflowWebView from "../components/LangflowWebView.vue";
+import {
+  useLangflow,
+  type LangflowFlowSummary,
+  type LangflowStatus,
+} from "../composables/useLangflow";
 
-const SAMPLE_FIXTURE = {
-  id: "demo-workflow",
-  title: "Demo Workflow",
-  nodes: [
-    {
-      id: "node-1",
-      data: {
-        metadata: {
-          id: "step-a",
-          title: "Step A",
-          executor: "deepseek",
-          skills: ["brainstorming"],
-        },
-      },
-    },
-    {
-      id: "node-2",
-      data: {
-        metadata: {
-          id: "step-b",
-          title: "Step B",
-          executor: "claude-code",
-          skills: [],
-        },
-      },
-    },
-  ],
-  edges: [{ source: "node-1", target: "node-2" }],
-};
+const props = defineProps<{ workspace: string }>();
 
-const jsonText = ref("");
-const compiling = ref(false);
+const { fetchStatus, fetchFlows, createFlow, setActive } = useLangflow();
+
+const loading = ref(true);
+const acting = ref(false);
+const offline = ref(false);
+const status = ref<LangflowStatus | null>(null);
+const flows = ref<LangflowFlowSummary[]>([]);
+const activeFlowId = ref<string | undefined>();
+const selectedId = ref<string | null>(null);
 const message = ref<{ type: "success" | "error"; text: string } | null>(null);
 
-function loadSampleFixture() {
-  jsonText.value = JSON.stringify(SAMPLE_FIXTURE, null, 2);
+onMounted(() => {
+  if (props.workspace) {
+    void loadAll();
+  } else {
+    loading.value = false;
+  }
+});
+
+watch(
+  () => props.workspace,
+  (ws) => {
+    if (ws) void loadAll();
+    else {
+      flows.value = [];
+      selectedId.value = null;
+      loading.value = false;
+    }
+  },
+);
+
+async function loadAll() {
+  loading.value = true;
+  message.value = null;
+  try {
+    status.value = await fetchStatus();
+    offline.value = !status.value.ok;
+    if (!offline.value) {
+      const data = await fetchFlows();
+      flows.value = data.flows;
+      activeFlowId.value = data.activeFlowId;
+      if (!selectedId.value && data.activeFlowId) {
+        selectedId.value = data.activeFlowId;
+      } else if (!selectedId.value && data.flows[0]) {
+        selectedId.value = data.flows[0].id;
+      } else if (
+        selectedId.value &&
+        !data.flows.some((f) => f.id === selectedId.value)
+      ) {
+        selectedId.value = data.flows[0]?.id ?? null;
+      }
+    }
+  } catch (err) {
+    offline.value = true;
+    const text = err instanceof Error ? err.message : String(err);
+    message.value = { type: "error", text };
+  } finally {
+    loading.value = false;
+  }
+}
+
+function selectFlow(flowId: string) {
+  selectedId.value = flowId;
   message.value = null;
 }
 
-async function compileAndSave() {
+async function onCreate() {
+  acting.value = true;
   message.value = null;
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(jsonText.value);
-  } catch {
-    message.value = { type: "error", text: "Invalid JSON — check syntax and try again." };
-    return;
+    const flow = await createFlow(`Flow ${flows.value.length + 1}`);
+    flows.value = [flow, ...flows.value];
+    selectedId.value = flow.id;
+  } catch (err) {
+    const text = err instanceof Error ? err.message : String(err);
+    message.value = { type: "error", text };
+  } finally {
+    acting.value = false;
   }
+}
 
-  if (!parsed || typeof parsed !== "object") {
-    message.value = { type: "error", text: "Langflow export must be a JSON object." };
-    return;
-  }
-
-  compiling.value = true;
+async function onSetActive() {
+  if (!selectedId.value) return;
+  acting.value = true;
+  message.value = null;
   try {
-    const port = await window.desktop.getSidecarPort();
-    const res = await fetch(`http://127.0.0.1:${port}/v1/workflow/compile`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ langflowJson: parsed }),
-    });
-
-    if (!res.ok) {
-      let detail = res.statusText;
-      try {
-        const body = (await res.json()) as { detail?: string };
-        if (body.detail) detail = body.detail;
-      } catch {
-        /* ignore */
-      }
-      message.value = { type: "error", text: `Compile failed (${res.status}): ${detail}` };
-      return;
-    }
-
-    const workflow = (await res.json()) as { id: string; title: string; steps: unknown[] };
+    await setActive(selectedId.value);
+    activeFlowId.value = selectedId.value;
     message.value = {
       type: "success",
-      text: `Saved workflow "${workflow.title}" (${workflow.id}) with ${workflow.steps.length} step(s) to .agentflow/workflow.yaml`,
+      text: "Active workflow saved to .agentflow/workflow.yaml",
     };
   } catch (err) {
     const text = err instanceof Error ? err.message : String(err);
-    message.value = { type: "error", text: `Request failed: ${text}` };
+    message.value = { type: "error", text };
   } finally {
-    compiling.value = false;
+    acting.value = false;
   }
+}
+
+function openInBrowser() {
+  if (!status.value?.baseUrl || !selectedId.value) return;
+  const url = `${status.value.baseUrl.replace(/\/$/, "")}/flow/${selectedId.value}`;
+  window.open(url, "_blank");
 }
 </script>
 
 <template>
-  <div class="flex-1 overflow-auto p-8 bg-gray-50">
-    <div class="max-w-3xl mx-auto">
-      <h1 class="text-xl font-semibold mb-2">Langflow Editor</h1>
-      <p class="text-sm text-gray-600 mb-6">
-        Full Langflow visual editor bundle is planned for v1.1. For now, paste a Langflow JSON
-        export below and compile it into <code class="text-xs bg-gray-200 px-1 rounded">.agentflow/workflow.yaml</code>.
-      </p>
+  <div class="flex flex-1 min-h-0 flex-col">
+    <div
+      v-if="!workspace"
+      class="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center"
+    >
+      <p class="text-sm text-gray-600">Open a project to edit Langflow workflows.</p>
+      <p class="text-xs text-gray-500">Use Home to create or open a project folder.</p>
+    </div>
 
-      <div class="flex gap-2 mb-3">
-        <button type="button" class="btn-primary bg-gray-600 hover:bg-gray-700" @click="loadSampleFixture">
-          Load sample fixture
-        </button>
-        <button
-          type="button"
-          class="btn-primary"
-          :disabled="compiling || !jsonText.trim()"
-          @click="compileAndSave"
-        >
-          {{ compiling ? "Compiling…" : "Compile & Save" }}
-        </button>
-      </div>
-
-      <textarea
-        v-model="jsonText"
-        class="input-field font-mono text-sm min-h-64 resize-y"
-        placeholder='Paste Langflow export JSON here, e.g. { "nodes": [...], "edges": [...] }'
-        spellcheck="false"
-      />
+    <template v-else>
+      <header
+        class="flex flex-wrap items-center gap-2 border-b border-gray-200 bg-white px-4 py-2"
+      >
+        <h1 class="text-sm font-semibold text-gray-800">Langflow Editor</h1>
+        <span v-if="status?.baseUrl" class="text-xs text-gray-400 truncate max-w-xs">
+          {{ status.baseUrl }}
+        </span>
+        <div class="ml-auto flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            class="text-xs px-3 py-1 rounded-lg border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+            :disabled="!selectedId || offline"
+            @click="openInBrowser"
+          >
+            Open in Browser
+          </button>
+          <button
+            type="button"
+            class="btn-primary text-xs py-1 px-3"
+            :disabled="!selectedId || acting || offline"
+            @click="onSetActive"
+          >
+            {{ acting ? "Saving…" : "Set as Active Workflow" }}
+          </button>
+        </div>
+      </header>
 
       <p
         v-if="message"
-        class="mt-4 text-sm rounded-lg px-4 py-3"
+        class="px-4 py-1 text-xs"
         :class="
           message.type === 'success'
-            ? 'bg-green-50 text-green-800 border border-green-200'
-            : 'bg-red-50 text-red-800 border border-red-200'
+            ? 'text-green-800 bg-green-50'
+            : 'text-red-700 bg-red-50'
         "
       >
         {{ message.text }}
       </p>
-    </div>
+
+      <div class="flex flex-1 min-h-0">
+        <LangflowFlowSidebar
+          :flows="flows"
+          :selected-id="selectedId"
+          :active-flow-id="activeFlowId"
+          :loading="loading || acting"
+          :offline="offline"
+          @select="selectFlow"
+          @refresh="loadAll"
+          @create="onCreate"
+        />
+
+        <LangflowWebView
+          :base-url="status?.baseUrl ?? ''"
+          :flow-id="selectedId"
+          :offline="offline"
+        />
+      </div>
+    </template>
   </div>
 </template>

@@ -76,6 +76,8 @@ async function openProject(dir: string): Promise<string> {
 
 type AgentflowSettings = {
   resourceServerUrl?: string;
+  langflowBaseUrl?: string;
+  langflowApiKey?: string;
 };
 
 async function loadSettings(): Promise<AgentflowSettings> {
@@ -103,6 +105,7 @@ function createWindow(): BrowserWindow {
       preload: path.join(__dirname, "../preload/index.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      webviewTag: true,
     },
   });
 
@@ -138,6 +141,21 @@ app.whenReady().then(async () => {
   ipcMain.handle("settings:setResourceServerUrl", async (_e, url: string) => {
     await saveSettings({ resourceServerUrl: url.trim() });
     await refreshResourceServerUrl();
+    return true;
+  });
+  ipcMain.handle("settings:getLangflowBaseUrl", async () => {
+    const settings = await loadSettings();
+    return settings.langflowBaseUrl ?? "http://127.0.0.1:7860";
+  });
+  ipcMain.handle("settings:getLangflowApiKeyStatus", async () => {
+    const settings = await loadSettings();
+    return settings.langflowApiKey ? "***configured***" : "";
+  });
+  ipcMain.handle("settings:setLangflow", async (_e, baseUrl: string, apiKey: string) => {
+    await saveSettings({
+      langflowBaseUrl: baseUrl.trim(),
+      langflowApiKey: apiKey.trim(),
+    });
     return true;
   });
 
