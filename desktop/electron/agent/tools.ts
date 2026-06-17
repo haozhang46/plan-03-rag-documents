@@ -46,3 +46,9 @@ export function buildDesktopLangChainTools(ctx: DesktopToolContext) {
     ),
   ];
 }
+
+export function buildReadOnlyDesktopTools(ctx: DesktopToolContext) {
+  return buildDesktopLangChainTools(ctx).filter((t) =>
+    ["read_file", "list_dir", "git_status", "git_diff"].includes(t.name),
+  );
+}

@@ -1,6 +1,6 @@
 import http from "node:http";
-import { agentService } from "./agentService";
-import { listSkills } from "../skills/loader";
+import { agentService, type ChatMode } from "./agentService";
+import { listSkillCatalog, listSkills } from "../skills/loader";
 import {
   createWorkflowFromTemplate,
   deleteWorkflow,
@@ -525,8 +525,14 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
 
     if (req.method === "GET" && url === "/v1/skills") {
       try {
-        const skills = await listSkills();
-        jsonResponse(res, 200, skills);
+        const detailed = parseQuery(req.url ?? "").get("detailed");
+        if (detailed === "1") {
+          const skills = await listSkillCatalog();
+          jsonResponse(res, 200, skills);
+        } else {
+          const skills = await listSkills();
+          jsonResponse(res, 200, skills);
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         jsonResponse(res, 500, { detail: message });
@@ -638,7 +644,13 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
         return;
       }
 
-      let payload: { flow_id?: string; thread_id?: string; message?: string };
+      let payload: {
+        flow_id?: string;
+        thread_id?: string;
+        message?: string;
+        mode?: string;
+        skills?: string[];
+      };
       try {
         payload = JSON.parse(await readBody(req));
       } catch {
@@ -646,7 +658,12 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
         return;
       }
 
-      if (payload.flow_id !== "general-react") {
+      let mode: ChatMode = "agent";
+      if (payload.mode === "ask" || payload.mode === "plan" || payload.mode === "agent") {
+        mode = payload.mode;
+      } else if (payload.flow_id === "general-react") {
+        mode = "agent";
+      } else if (payload.flow_id) {
         jsonResponse(res, 400, { detail: `unknown flow_id: ${payload.flow_id}` });
         return;
       }
@@ -662,8 +679,15 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       });
 
       try {
-        const events = agentService.streamEvents(payload.thread_id, payload.message);
+        const events = agentService.streamEvents(payload.thread_id, payload.message, {
+          mode,
+          skills: payload.skills,
+        });
         for await (const event of events) {
+          if (event.event === "plan_ready") {
+            writeSse(res, "plan_ready", event.data ?? {});
+            continue;
+          }
           if (event.event === "on_chat_model_stream") {
             const chunk = event.data?.chunk as { content?: string } | undefined;
             if (chunk?.content) {

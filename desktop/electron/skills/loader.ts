@@ -24,6 +24,7 @@ async function skillsRoot(): Promise<string> {
 interface RegistrySkill {
   name: string;
   path: string;
+  description?: string;
 }
 
 interface Registry {
@@ -39,6 +40,19 @@ async function loadRegistry(): Promise<Registry> {
 export async function listSkills(): Promise<string[]> {
   const registry = await loadRegistry();
   return registry.skills.map((s) => s.name);
+}
+
+export interface SkillCatalogEntry {
+  name: string;
+  description: string;
+}
+
+export async function listSkillCatalog(): Promise<SkillCatalogEntry[]> {
+  const registry = await loadRegistry();
+  return registry.skills.map((s) => ({
+    name: s.name,
+    description: (s as RegistrySkill & { description?: string }).description ?? s.name,
+  }));
 }
 
 export async function loadSkillBodies(names: string[]): Promise<string[]> {
