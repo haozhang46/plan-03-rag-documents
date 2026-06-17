@@ -7,6 +7,7 @@ defineProps<{
   activeFlowId?: string;
   loading: boolean;
   offline: boolean;
+  offlineDetail?: string;
 }>();
 
 const emit = defineEmits<{
@@ -42,6 +43,7 @@ function formatUpdated(iso?: string): string {
       class="mx-3 mt-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1.5"
     >
       Langflow offline — check Settings and start the server.
+      <span v-if="offlineDetail" class="block mt-1 text-amber-900/80">{{ offlineDetail }}</span>
     </p>
 
     <div v-if="loading" class="p-3 text-xs text-gray-500">Loading flows…</div>

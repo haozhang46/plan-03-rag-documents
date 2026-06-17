@@ -45,6 +45,9 @@ async function loadAll() {
   loading.value = true;
   message.value = null;
   try {
+    if (offline.value) {
+      await window.desktop.restartLangflow();
+    }
     status.value = await fetchStatus();
     offline.value = !status.value.ok;
     if (!offline.value) {
@@ -174,6 +177,7 @@ function openInBrowser() {
           :active-flow-id="activeFlowId"
           :loading="loading || acting"
           :offline="offline"
+          :offline-detail="status?.detail"
           @select="selectFlow"
           @refresh="loadAll"
           @create="onCreate"

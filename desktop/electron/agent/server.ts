@@ -1,16 +1,41 @@
 import http from "node:http";
 import { agentService } from "./agentService";
 import { listSkills } from "../skills/loader";
-import { loadWorkflow } from "../workflow/loader";
+import {
+  createWorkflowFromTemplate,
+  deleteWorkflow,
+  getActiveWorkflowId,
+  listTemplates,
+  listWorkflows,
+  loadWorkflow,
+  saveWorkflow,
+} from "../workflow/loader";
 import { compileAndWriteWorkflow } from "../workflow/compiler";
 import {
+  activateWorkflow,
   advanceWorkflow,
   clearRunner,
+  compareWorkflowEvals,
+  getDispatchDecision,
   getResourceContext,
   getWorkflowState,
+  runWorkflowEval,
+  runWorkflowGates,
   runWorkflowStep,
+  setWorkflowIntent,
 } from "../workflow/workflowService";
 import { handleLangflowRoutes } from "../langflow/routes";
+import { IntentSchema, RiskSchema, WorkflowSchema } from "../workflow/types";
+import {
+  workspaceDeletePath,
+  workspaceDeploymentConfig,
+  workspaceListDir,
+  workspaceListFiles,
+  workspaceReadFile,
+  workspaceReadGates,
+  workspaceReadPhase,
+  workspaceWriteFile,
+} from "../workspace/service";
 
 export type AgentServerOptions = {
   port: number;
@@ -40,6 +65,16 @@ function jsonResponse(res: http.ServerResponse, status: number, data: unknown): 
   res.end(JSON.stringify(data));
 }
 
+function parseQuery(url: string): URLSearchParams {
+  const idx = url.indexOf("?");
+  return new URLSearchParams(idx >= 0 ? url.slice(idx + 1) : "");
+}
+
+function workflowIdFromQuery(reqUrl: string | undefined): string | undefined {
+  const id = parseQuery(reqUrl ?? "").get("workflowId");
+  return id && id.trim() ? id.trim() : undefined;
+}
+
 export function startAgentServer(options: AgentServerOptions): http.Server {
   const { port, getApiKey, getWorkspaceRoot, getResourceServerUrl } = options;
 
@@ -55,7 +90,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
 
   const server = http.createServer(async (req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
     if (req.method === "OPTIONS") {
@@ -92,10 +127,246 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
+    if (req.method === "GET" && url === "/v1/workflows") {
+      try {
+        const workspaceRoot = getWorkspaceRoot();
+        const workflows = await listWorkflows(workspaceRoot);
+        const activeWorkflowId = await getActiveWorkflowId(workspaceRoot);
+        jsonResponse(res, 200, {
+          workflows: workflows.map((w) => ({
+            ...w,
+            isActive: w.id === activeWorkflowId,
+          })),
+          activeWorkflowId,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        jsonResponse(res, 500, { detail: message });
+      }
+      return;
+    }
+
+    if (req.method === "GET" && url === "/v1/workflows/templates") {
+      try {
+        const templates = await listTemplates();
+        jsonResponse(res, 200, { templates });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        jsonResponse(res, 500, { detail: message });
+      }
+      return;
+    }
+
+    if (req.method === "POST" && url === "/v1/workflows/from-template") {
+      let payload: { templateId?: string; newId?: string };
+      try {
+        payload = JSON.parse(await readBody(req));
+      } catch {
+        jsonResponse(res, 400, { detail: "invalid JSON" });
+        return;
+      }
+      if (!payload.templateId) {
+        jsonResponse(res, 400, { detail: "templateId required" });
+        return;
+      }
+      try {
+        const workspaceRoot = getWorkspaceRoot();
+        const workflowId = await createWorkflowFromTemplate(
+          workspaceRoot,
+          payload.templateId,
+          payload.newId,
+        );
+        jsonResponse(res, 201, { workflowId });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        jsonResponse(res, 500, { detail: message });
+      }
+      return;
+    }
+
+    const workflowActivateMatch = url?.match(/^\/v1\/workflows\/([^/]+)\/activate$/);
+    if (req.method === "POST" && workflowActivateMatch) {
+      const workflowId = decodeURIComponent(workflowActivateMatch[1]);
+      try {
+        await activateWorkflow(
+          getWorkspaceRoot(),
+          workflowId,
+          getApiKey,
+          getResourceServerUrl,
+        );
+        jsonResponse(res, 200, { workflowId, active: true });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        jsonResponse(res, 500, { detail: message });
+      }
+      return;
+    }
+
+    const workflowIdMatch = url?.match(/^\/v1\/workflows\/([^/]+)$/);
+    if (req.method === "PUT" && workflowIdMatch) {
+      const workflowId = decodeURIComponent(workflowIdMatch[1]);
+      let payload: unknown;
+      try {
+        payload = JSON.parse(await readBody(req));
+      } catch {
+        jsonResponse(res, 400, { detail: "invalid JSON" });
+        return;
+      }
+      try {
+        const definition = WorkflowSchema.parse(payload);
+        if (definition.id !== workflowId) {
+          jsonResponse(res, 400, { detail: "workflow id mismatch" });
+          return;
+        }
+        await saveWorkflow(getWorkspaceRoot(), workflowId, definition);
+        clearRunner(getWorkspaceRoot(), workflowId);
+        jsonResponse(res, 200, definition);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        jsonResponse(res, 500, { detail: message });
+      }
+      return;
+    }
+
+    if (req.method === "DELETE" && workflowIdMatch) {
+      const workflowId = decodeURIComponent(workflowIdMatch[1]);
+      try {
+        await deleteWorkflow(getWorkspaceRoot(), workflowId);
+        jsonResponse(res, 200, { deleted: workflowId });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        jsonResponse(res, 400, { detail: message });
+      }
+      return;
+    }
+
     if (req.method === "GET" && url === "/v1/workflows/current") {
       try {
-        const workflow = await loadWorkflow(getWorkspaceRoot());
+        const workflowId = workflowIdFromQuery(req.url);
+        const workflow = await loadWorkflow(getWorkspaceRoot(), workflowId);
         jsonResponse(res, 200, workflow);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        jsonResponse(res, 500, { detail: message });
+      }
+      return;
+    }
+
+    if (req.method === "GET" && url === "/v1/workflow/dispatch") {
+      try {
+        const workflowId = workflowIdFromQuery(req.url);
+        const decision = await getDispatchDecision(
+          getWorkspaceRoot(),
+          getApiKey,
+          getResourceServerUrl,
+          workflowId,
+        );
+        jsonResponse(res, 200, decision);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        jsonResponse(res, 500, { detail: message });
+      }
+      return;
+    }
+
+    if (req.method === "POST" && url === "/v1/workflow/intent") {
+      let payload: { intent?: string; risk?: string; workflowId?: string };
+      try {
+        payload = JSON.parse(await readBody(req));
+      } catch {
+        jsonResponse(res, 400, { detail: "invalid JSON" });
+        return;
+      }
+
+      const intent = IntentSchema.safeParse(payload.intent);
+      const risk = RiskSchema.safeParse(payload.risk);
+      if (!intent.success || !risk.success) {
+        jsonResponse(res, 400, { detail: "intent and risk required (valid enum values)" });
+        return;
+      }
+
+      try {
+        const state = await setWorkflowIntent(
+          getWorkspaceRoot(),
+          getApiKey,
+          intent.data,
+          risk.data,
+          getResourceServerUrl,
+          payload.workflowId,
+        );
+        jsonResponse(res, 200, state);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        jsonResponse(res, 500, { detail: message });
+      }
+      return;
+    }
+
+    if (req.method === "POST" && url === "/v1/workflow/gates") {
+      let payload: { stepId?: string; workflowId?: string } = {};
+      try {
+        const raw = await readBody(req);
+        if (raw.trim()) {
+          payload = JSON.parse(raw);
+        }
+      } catch {
+        jsonResponse(res, 400, { detail: "invalid JSON" });
+        return;
+      }
+
+      try {
+        const state = await runWorkflowGates(
+          getWorkspaceRoot(),
+          getApiKey,
+          payload.stepId,
+          getResourceServerUrl,
+          payload.workflowId,
+        );
+        jsonResponse(res, 200, state);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        jsonResponse(res, 500, { detail: message });
+      }
+      return;
+    }
+
+    if (req.method === "POST" && url === "/v1/eval/run") {
+      try {
+        const workflowId = workflowIdFromQuery(req.url);
+        const report = await runWorkflowEval(
+          getWorkspaceRoot(),
+          getApiKey,
+          getResourceServerUrl,
+          workflowId,
+        );
+        jsonResponse(res, 200, report);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        jsonResponse(res, 500, { detail: message });
+      }
+      return;
+    }
+
+    if (req.method === "POST" && url === "/v1/eval/compare") {
+      let payload: { baseline?: unknown; candidate?: unknown };
+      try {
+        payload = JSON.parse(await readBody(req));
+      } catch {
+        jsonResponse(res, 400, { detail: "invalid JSON" });
+        return;
+      }
+
+      if (!payload.baseline || !payload.candidate) {
+        jsonResponse(res, 400, { detail: "baseline and candidate eval reports required" });
+        return;
+      }
+
+      try {
+        const comparison = compareWorkflowEvals(
+          payload.baseline as Parameters<typeof compareWorkflowEvals>[0],
+          payload.candidate as Parameters<typeof compareWorkflowEvals>[1],
+        );
+        jsonResponse(res, 200, comparison);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         jsonResponse(res, 500, { detail: message });
@@ -105,7 +376,13 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
 
     if (req.method === "GET" && url === "/v1/workflow/state") {
       try {
-        const state = await getWorkflowState(getWorkspaceRoot(), getApiKey, getResourceServerUrl);
+        const workflowId = workflowIdFromQuery(req.url);
+        const state = await getWorkflowState(
+          getWorkspaceRoot(),
+          getApiKey,
+          getResourceServerUrl,
+          workflowId,
+        );
         jsonResponse(res, 200, state);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -125,6 +402,127 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
+    if (req.method === "GET" && url?.startsWith("/v1/workspace/list")) {
+      const query = parseQuery(req.url ?? "");
+      const relPath = query.get("path") ?? "";
+      const recursive = query.get("recursive") === "1";
+      try {
+        const entries = recursive
+          ? await workspaceListFiles(getWorkspaceRoot(), relPath)
+          : await workspaceListDir(getWorkspaceRoot(), relPath);
+        jsonResponse(res, 200, { path: relPath, entries });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        jsonResponse(res, 400, { detail: message });
+      }
+      return;
+    }
+
+    if (req.method === "GET" && url?.startsWith("/v1/workspace/file")) {
+      const query = parseQuery(req.url ?? "");
+      const relPath = query.get("path");
+      if (!relPath) {
+        jsonResponse(res, 400, { detail: "path query required" });
+        return;
+      }
+      try {
+        const file = await workspaceReadFile(getWorkspaceRoot(), relPath);
+        jsonResponse(res, 200, file);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        jsonResponse(res, 400, { detail: message });
+      }
+      return;
+    }
+
+    if (req.method === "PUT" && url === "/v1/workspace/file") {
+      let payload: { path?: string; content?: string };
+      try {
+        payload = JSON.parse(await readBody(req));
+      } catch {
+        jsonResponse(res, 400, { detail: "invalid JSON" });
+        return;
+      }
+      if (!payload.path || payload.content === undefined) {
+        jsonResponse(res, 400, { detail: "path and content required" });
+        return;
+      }
+      try {
+        const result = await workspaceWriteFile(
+          getWorkspaceRoot(),
+          payload.path,
+          payload.content,
+        );
+        jsonResponse(res, 200, result);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        jsonResponse(res, 400, { detail: message });
+      }
+      return;
+    }
+
+    if (req.method === "DELETE" && url?.startsWith("/v1/workspace/file")) {
+      const query = parseQuery(req.url ?? "");
+      const relPath = query.get("path");
+      if (!relPath) {
+        jsonResponse(res, 400, { detail: "path query required" });
+        return;
+      }
+      try {
+        const result = await workspaceDeletePath(getWorkspaceRoot(), relPath);
+        jsonResponse(res, 200, result);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        jsonResponse(res, 400, { detail: message });
+      }
+      return;
+    }
+
+    if (req.method === "GET" && url?.startsWith("/v1/workflow/phase")) {
+      const query = parseQuery(req.url ?? "");
+      const stepId = query.get("stepId");
+      if (!stepId) {
+        jsonResponse(res, 400, { detail: "stepId query required" });
+        return;
+      }
+      try {
+        const phase = await workspaceReadPhase(getWorkspaceRoot(), stepId);
+        jsonResponse(res, 200, phase);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        jsonResponse(res, 500, { detail: message });
+      }
+      return;
+    }
+
+    if (req.method === "GET" && url?.startsWith("/v1/workflow/gates")) {
+      const query = parseQuery(req.url ?? "");
+      const stepId = query.get("stepId");
+      if (!stepId) {
+        jsonResponse(res, 400, { detail: "stepId query required" });
+        return;
+      }
+      try {
+        const gates = await workspaceReadGates(getWorkspaceRoot(), stepId);
+        jsonResponse(res, 200, gates);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        jsonResponse(res, 500, { detail: message });
+      }
+      return;
+    }
+
+    if (req.method === "GET" && url === "/v1/workspace/deployment") {
+      try {
+        const config = await workspaceDeploymentConfig(getWorkspaceRoot(), getResourceServerUrl);
+        jsonResponse(res, 200, config);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        jsonResponse(res, 500, { detail: message });
+      }
+      return;
+    }
+
     if (req.method === "GET" && url === "/v1/skills") {
       try {
         const skills = await listSkills();
@@ -137,7 +535,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
     }
 
     if (req.method === "POST" && url === "/v1/workflow/advance") {
-      let payload: { action?: string };
+      let payload: { action?: string; workflowId?: string };
       try {
         payload = JSON.parse(await readBody(req));
       } catch {
@@ -152,7 +550,13 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       }
 
       try {
-        const state = await advanceWorkflow(getWorkspaceRoot(), getApiKey, action, getResourceServerUrl);
+        const state = await advanceWorkflow(
+          getWorkspaceRoot(),
+          getApiKey,
+          action,
+          getResourceServerUrl,
+          payload.workflowId,
+        );
         jsonResponse(res, 200, state);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -191,7 +595,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
     }
 
     if (req.method === "POST" && url === "/v1/workflow/run") {
-      let payload: { stepId?: string } = {};
+      let payload: { stepId?: string; workflowId?: string } = {};
       try {
         const raw = await readBody(req);
         if (raw.trim()) {
@@ -214,6 +618,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
           getApiKey,
           payload.stepId,
           getResourceServerUrl,
+          payload.workflowId,
         );
         for await (const event of events) {
           writeSse(res, event.type, event);

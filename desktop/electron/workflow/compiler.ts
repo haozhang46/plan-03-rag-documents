@@ -12,6 +12,12 @@ interface LangflowNodeMetadata {
   prompt_template?: string;
   outputs?: string[];
   gate?: "manual" | "auto";
+  advance?: "manual" | "auto";
+  phase_output?: string;
+  gates?: Array<
+    | { id: string; type: "file"; path: string; min_bytes?: number }
+    | { id: string; type: "shell"; command: string; cwd?: string; expect_exit?: number }
+  >;
   requires_resources?: string[];
 }
 
@@ -61,7 +67,10 @@ export function compileLangflowJson(langflowJson: LangflowJson): WorkflowDefinit
       skills: meta.skills ?? [],
       prompt_template: meta.prompt_template,
       outputs: meta.outputs ?? [],
-      gate: meta.gate ?? "manual",
+      gate: meta.gate ?? meta.advance ?? "manual",
+      advance: meta.advance ?? meta.gate ?? "manual",
+      phase_output: meta.phase_output,
+      gates: meta.gates ?? [],
       requires_resources: meta.requires_resources ?? [],
     };
   });

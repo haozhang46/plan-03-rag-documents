@@ -9,12 +9,14 @@ const resourceServerUrl = ref("");
 const langflowBaseUrl = ref("");
 const langflowApiKeyStatus = ref("");
 const langflowApiKeyInput = ref("");
+const langflowAutoStart = ref(true);
 
 onMounted(async () => {
   apiKeyStatus.value = await window.desktop.getApiKeyStatus();
   resourceServerUrl.value = await window.desktop.getResourceServerUrl();
   langflowBaseUrl.value = await window.desktop.getLangflowBaseUrl();
   langflowApiKeyStatus.value = await window.desktop.getLangflowApiKeyStatus();
+  langflowAutoStart.value = await window.desktop.getLangflowAutoStart();
 });
 
 async function saveApiKey() {
@@ -36,6 +38,11 @@ async function saveLangflow() {
   await window.desktop.setLangflow(langflowBaseUrl.value, langflowApiKeyInput.value);
   langflowApiKeyInput.value = "";
   langflowApiKeyStatus.value = await window.desktop.getLangflowApiKeyStatus();
+}
+
+async function toggleLangflowAutoStart() {
+  langflowAutoStart.value = !langflowAutoStart.value;
+  await window.desktop.setLangflowAutoStart(langflowAutoStart.value);
 }
 </script>
 
@@ -80,8 +87,17 @@ async function saveLangflow() {
     <section>
       <h2 class="text-sm font-medium mb-2">Langflow Server</h2>
       <p class="text-sm text-gray-500 mb-3">
-        URL of your local Langflow instance for the visual flow editor tab.
+        URL of your local Langflow instance. When auto-start is on, Desktop spawns Langflow on
+        port 17860 if the URL below is unreachable.
       </p>
+      <label class="flex items-center gap-2 text-sm mb-3 cursor-pointer">
+        <input
+          type="checkbox"
+          :checked="langflowAutoStart"
+          @change="toggleLangflowAutoStart"
+        />
+        Start Langflow with Agent Flow Desktop
+      </label>
       <input
         v-model="langflowBaseUrl"
         type="url"

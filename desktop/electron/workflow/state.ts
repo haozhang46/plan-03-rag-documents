@@ -1,33 +1,41 @@
 import { randomUUID } from "node:crypto";
 import type { WorkflowDefinition } from "./types";
+import type { GateResult, Intent, Risk } from "./types";
 
-export type StepStatus = "pending" | "running" | "done" | "failed" | "skipped";
+export type StepStatus =
+  | "pending"
+  | "running"
+  | "done"
+  | "failed"
+  | "skipped"
+  | "gate_failed";
 
 export interface WorkflowRunState {
   workflowId: string;
+  intent: Intent;
+  risk: Risk;
   currentStepId: string;
+  activeStepIds: string[];
   stepStatuses: Record<string, StepStatus>;
+  lastGateResults: Record<string, GateResult[]>;
   threadId: string;
 }
 
 const runs = new Map<string, WorkflowRunState>();
 
-export function createInitialState(workflow: WorkflowDefinition): WorkflowRunState {
-  const stepStatuses: Record<string, StepStatus> = {};
-  for (const step of workflow.steps) {
-    stepStatuses[step.id] = "pending";
-  }
-
+export function cloneRunState(state: WorkflowRunState): WorkflowRunState {
   return {
-    workflowId: workflow.id,
-    currentStepId: workflow.steps[0].id,
-    stepStatuses,
-    threadId: randomUUID(),
+    ...state,
+    activeStepIds: [...state.activeStepIds],
+    stepStatuses: { ...state.stepStatuses },
+    lastGateResults: Object.fromEntries(
+      Object.entries(state.lastGateResults).map(([k, v]) => [k, [...v]]),
+    ),
   };
 }
 
 export function saveRunState(state: WorkflowRunState): void {
-  runs.set(state.threadId, state);
+  runs.set(state.threadId, cloneRunState(state));
 }
 
 export function loadRunState(threadId: string): WorkflowRunState | undefined {
@@ -35,15 +43,26 @@ export function loadRunState(threadId: string): WorkflowRunState | undefined {
   if (!state) {
     return undefined;
   }
-  return {
-    ...state,
-    stepStatuses: { ...state.stepStatuses },
-  };
+  return cloneRunState(state);
 }
 
-export function cloneRunState(state: WorkflowRunState): WorkflowRunState {
+export function legacyCreateInitialState(
+  workflow: WorkflowDefinition,
+): WorkflowRunState {
+  const stepStatuses: Record<string, StepStatus> = {};
+  const activeStepIds = workflow.steps.map((s) => s.id);
+  for (const step of workflow.steps) {
+    stepStatuses[step.id] = "pending";
+  }
+
   return {
-    ...state,
-    stepStatuses: { ...state.stepStatuses },
+    workflowId: workflow.id,
+    intent: "FEATURE",
+    risk: "HIGH",
+    currentStepId: workflow.steps[0].id,
+    activeStepIds,
+    stepStatuses,
+    lastGateResults: {},
+    threadId: randomUUID(),
   };
 }

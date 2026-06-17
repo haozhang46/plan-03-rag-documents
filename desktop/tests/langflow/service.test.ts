@@ -17,6 +17,11 @@ vi.mock("../../electron/langflow/client", () => ({
   createFlow: vi.fn(),
   getFlow: vi.fn(),
   createProject: vi.fn(),
+  findProjectIdByName: vi.fn(),
+}));
+
+vi.mock("../../electron/langflow/apiKey", () => ({
+  provisionLangflowApiKey: vi.fn().mockResolvedValue(null),
 }));
 
 import { getFlow } from "../../electron/langflow/client";

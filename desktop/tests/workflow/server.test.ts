@@ -91,6 +91,52 @@ describe("agent server workflow API", () => {
     expect(skills).toContain("test-driven-development");
   });
 
+  it("GET /v1/workflows returns list with active flag", async () => {
+    const res = await request(port, "GET", "/v1/workflows");
+    expect(res.status).toBe(200);
+    const body = JSON.parse(res.body) as {
+      workflows: Array<{ id: string; isActive: boolean }>;
+      activeWorkflowId: string;
+    };
+    expect(Array.isArray(body.workflows)).toBe(true);
+    expect(body.workflows.length).toBeGreaterThan(0);
+    expect(typeof body.activeWorkflowId).toBe("string");
+    expect(body.workflows.some((w) => w.isActive)).toBe(true);
+  });
+
+  it("GET /v1/workflows/templates lists built-in templates", async () => {
+    const res = await request(port, "GET", "/v1/workflows/templates");
+    expect(res.status).toBe(200);
+    const body = JSON.parse(res.body) as { templates: Array<{ id: string }> };
+    expect(body.templates.some((t) => t.id === "default-dev-cicd")).toBe(true);
+  });
+
+  it("POST /v1/workflows/from-template creates workflow", async () => {
+    const res = await request(
+      port,
+      "POST",
+      "/v1/workflows/from-template",
+      JSON.stringify({ templateId: "default-dev-cicd", newId: "test-wf" }),
+    );
+    expect(res.status).toBe(201);
+    const body = JSON.parse(res.body) as { workflowId: string };
+    expect(body.workflowId).toBe("test-wf");
+  });
+
+  it("POST /v1/workflows/:id/activate switches active", async () => {
+    await request(
+      port,
+      "POST",
+      "/v1/workflows/from-template",
+      JSON.stringify({ templateId: "default-dev-cicd", newId: "test-wf" }),
+    );
+    const res = await request(port, "POST", "/v1/workflows/test-wf/activate");
+    expect(res.status).toBe(200);
+    const list = await request(port, "GET", "/v1/workflows");
+    const parsed = JSON.parse(list.body) as { activeWorkflowId: string };
+    expect(parsed.activeWorkflowId).toBe("test-wf");
+  });
+
   it("GET /v1/workflows/current returns workflow definition", async () => {
     const res = await request(port, "GET", "/v1/workflows/current");
     expect(res.status).toBe(200);
@@ -117,5 +163,69 @@ describe("agent server workflow API", () => {
     expect(context.resources.length).toBeGreaterThan(0);
     expect(context.resources.some((r) => r.name === "app-db")).toBe(true);
     expect(context.markdown).toContain("## Available Server Resources");
+  });
+
+  it("GET /v1/workflow/dispatch returns dispatcher decision", async () => {
+    const res = await request(port, "GET", "/v1/workflow/dispatch");
+    expect(res.status).toBe(200);
+    const decision = JSON.parse(res.body) as { action: string; stepId: string };
+    expect(decision.action).toBe("run");
+    expect(decision.stepId).toBe("prd");
+  });
+
+  it("POST /v1/workflow/intent sets FAST_PATH active steps", async () => {
+    const res = await request(
+      port,
+      "POST",
+      "/v1/workflow/intent",
+      JSON.stringify({ intent: "BUG_FIX", risk: "LOW" }),
+    );
+    expect(res.status).toBe(200);
+    const state = JSON.parse(res.body) as { activeStepIds: string[]; currentStepId: string };
+    expect(state.activeStepIds).toEqual(["be-dev", "test", "cicd"]);
+    expect(state.currentStepId).toBe("be-dev");
+  });
+
+  it("POST /v1/eval/run returns harness score", async () => {
+    const res = await request(port, "POST", "/v1/eval/run", "{}");
+    expect(res.status).toBe(200);
+    const report = JSON.parse(res.body) as { totalScore: number; dimensions: unknown[] };
+    expect(typeof report.totalScore).toBe("number");
+    expect(report.dimensions.length).toBe(4);
+  });
+
+  it("GET /v1/workspace/list returns project entries", async () => {
+    await fs.mkdir(path.join(tmp, "docs"), { recursive: true });
+    await fs.writeFile(path.join(tmp, "docs/PRD.md"), "# PRD\n\nContent here.", "utf8");
+
+    const res = await request(port, "GET", "/v1/workspace/list?path=docs");
+    expect(res.status).toBe(200);
+    const data = JSON.parse(res.body) as {
+      entries: Array<{ name: string; type: string }>;
+    };
+    expect(data.entries.some((e) => e.name === "PRD.md")).toBe(true);
+  });
+
+  it("PUT /v1/workspace/file writes and reads back", async () => {
+    const writeRes = await request(
+      port,
+      "PUT",
+      "/v1/workspace/file",
+      JSON.stringify({ path: "docs/new.md", content: "# New doc" }),
+    );
+    expect(writeRes.status).toBe(200);
+
+    const readRes = await request(port, "GET", "/v1/workspace/file?path=docs/new.md");
+    expect(readRes.status).toBe(200);
+    const file = JSON.parse(readRes.body) as { content: string };
+    expect(file.content).toBe("# New doc");
+  });
+
+  it("GET /v1/workspace/deployment returns deployment summary", async () => {
+    const res = await request(port, "GET", "/v1/workspace/deployment");
+    expect(res.status).toBe(200);
+    const config = JSON.parse(res.body) as { platform: string; databases: unknown[] };
+    expect(config.platform).toBeDefined();
+    expect(config.databases.length).toBeGreaterThan(0);
   });
 });

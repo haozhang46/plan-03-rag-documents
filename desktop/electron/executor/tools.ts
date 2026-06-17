@@ -19,12 +19,102 @@ export async function readFileTool(workspaceRoot: string, relPath: string): Prom
   return fs.readFile(target, "utf8");
 }
 
+export interface WorkspaceEntry {
+  name: string;
+  path: string;
+  type: "file" | "directory";
+}
+
 export async function listDirTool(workspaceRoot: string, relPath: string): Promise<string> {
+  const entries = await listDirEntries(workspaceRoot, relPath);
+  return entries
+    .map((e) => `${e.type === "directory" ? "d" : "f"}\t${e.name}`)
+    .join("\n");
+}
+
+export async function listDirEntries(
+  workspaceRoot: string,
+  relPath: string,
+): Promise<WorkspaceEntry[]> {
   const target = resolveWorkspacePath(workspaceRoot, relPath || ".");
   const entries = await fs.readdir(target, { withFileTypes: true });
+  const base = relPath ? relPath.replace(/\/$/, "") : "";
   return entries
-    .map((e) => `${e.isDirectory() ? "d" : "f"}\t${e.name}`)
-    .join("\n");
+    .filter((e) => !e.name.startsWith("."))
+    .sort((a, b) => {
+      if (a.isDirectory() !== b.isDirectory()) {
+        return a.isDirectory() ? -1 : 1;
+      }
+      return a.name.localeCompare(b.name);
+    })
+    .map((e) => ({
+      name: e.name,
+      path: base ? `${base}/${e.name}` : e.name,
+      type: e.isDirectory() ? "directory" : "file",
+    }));
+}
+
+const SKIP_DIRS = new Set([
+  "node_modules",
+  ".git",
+  ".agentflow",
+  "dist",
+  ".output",
+  "__pycache__",
+  ".venv",
+  "out",
+]);
+
+export async function listFilesRecursive(
+  workspaceRoot: string,
+  relPath: string,
+  maxFiles = 500,
+): Promise<WorkspaceEntry[]> {
+  const results: WorkspaceEntry[] = [];
+  const queue = [relPath.replace(/\/$/, "") || "."];
+
+  while (queue.length > 0 && results.length < maxFiles) {
+    const current = queue.shift()!;
+    let entries: WorkspaceEntry[];
+    try {
+      entries = await listDirEntries(workspaceRoot, current === "." ? "" : current);
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (entry.type === "directory") {
+        if (!SKIP_DIRS.has(entry.name)) {
+          queue.push(entry.path);
+        }
+      } else {
+        results.push(entry);
+        if (results.length >= maxFiles) break;
+      }
+    }
+  }
+
+  return results;
+}
+
+export async function writeFileTool(
+  workspaceRoot: string,
+  relPath: string,
+  content: string,
+): Promise<void> {
+  const target = resolveWorkspacePath(workspaceRoot, relPath);
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.writeFile(target, content, "utf8");
+}
+
+export async function deleteFileTool(workspaceRoot: string, relPath: string): Promise<void> {
+  const target = resolveWorkspacePath(workspaceRoot, relPath);
+  const stat = await fs.stat(target);
+  if (stat.isDirectory()) {
+    await fs.rm(target, { recursive: true, force: true });
+  } else {
+    await fs.unlink(target);
+  }
 }
 
 export async function gitStatus(workspaceRoot: string): Promise<string> {

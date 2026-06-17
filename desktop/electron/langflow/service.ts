@@ -5,10 +5,12 @@ import {
   checkHealth,
   createFlow,
   createProject,
+  findProjectIdByName,
   getFlow,
   listFlows,
 } from "./client";
 import { getLangflowConfig } from "./config";
+import { getLastLangflowStartDetail, getRuntimeMode } from "./manager";
 import { readLangflowState, writeLangflowState } from "./store";
 import type { LangflowFlowSummary, LangflowStatus } from "./types";
 
@@ -49,11 +51,13 @@ export function countStepNodes(langflowJson: LangflowJson): number {
 export async function getLangflowStatus(): Promise<LangflowStatus> {
   const config = await getLangflowConfig();
   const ok = await checkHealth(config);
+  const mode = getRuntimeMode();
+  const startDetail = getLastLangflowStartDetail();
   return {
     ok,
     baseUrl: config.baseUrl,
-    mode: "external",
-    detail: ok ? undefined : "Langflow is unreachable",
+    mode: ok ? mode : "off",
+    detail: ok ? undefined : (startDetail ?? "Langflow is unreachable"),
   };
 }
 
@@ -64,7 +68,11 @@ export async function ensureWorkspaceProject(projectRoot: string): Promise<strin
   }
 
   const config = await getLangflowConfig();
-  const projectId = await createProject(config, workspaceProjectName(projectRoot));
+  const name = workspaceProjectName(projectRoot);
+  let projectId = await createProject(config, name);
+  if (!projectId) {
+    projectId = await findProjectIdByName(config, name);
+  }
   if (projectId) {
     await writeLangflowState(projectRoot, { ...state, projectId });
   }

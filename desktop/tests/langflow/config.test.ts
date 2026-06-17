@@ -1,7 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+vi.mock("../../electron/langflow/apiKey", () => ({
+  provisionLangflowApiKey: vi.fn().mockResolvedValue(null),
+}));
+
 import { getLangflowConfig } from "../../electron/langflow/config";
 
 describe("getLangflowConfig", () => {

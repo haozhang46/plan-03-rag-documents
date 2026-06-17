@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import {
   ChatInput,
   ChatMessage,
@@ -8,16 +8,73 @@ import {
   type ToolEvent,
 } from "@agent-flow/shared-ui";
 import { useLocalChat } from "../composables/useLocalChat";
+import WorkflowAgentRunPanel from "../components/workflow/WorkflowAgentRunPanel.vue";
+import WorkflowArchitecturePanel from "../components/workflow/WorkflowArchitecturePanel.vue";
+import WorkflowCicdPanel from "../components/workflow/WorkflowCicdPanel.vue";
+import WorkflowCodeExplorer from "../components/workflow/WorkflowCodeExplorer.vue";
+import WorkflowMarkdownPanel from "../components/workflow/WorkflowMarkdownPanel.vue";
+import WorkflowConfigDrawer from "../components/workflow/WorkflowConfigDrawer.vue";
+import WorkflowSidebar from "../components/workflow/WorkflowSidebar.vue";
+import WorkflowTemplatePicker from "../components/workflow/WorkflowTemplatePicker.vue";
 import {
+  stepCodeRoot,
+  stepPanelKind,
+  stepReportPath,
   useWorkflow,
   type StepStatus,
+  type TemplateSummary,
   type WorkflowDefinition,
   type WorkflowRunState,
+  type WorkflowSummary,
 } from "../composables/useWorkflow";
 
 defineProps<{ workspace: string }>();
 
-const { fetchWorkflow, fetchState, fetchSkills, advance, runStep } = useWorkflow();
+const workflowApi = useWorkflow();
+const {
+  fetchWorkflowList,
+  fetchTemplates,
+  fetchWorkflow,
+  fetchState,
+  fetchSkills,
+  saveWorkflow,
+  createFromTemplate,
+  activateWorkflow,
+  deleteWorkflow,
+  advance,
+  runStep,
+  fetchPhase,
+  fetchGates,
+  fetchDeploymentConfig,
+  fetchResourceContext,
+  listWorkspace,
+  readWorkspaceFile,
+  writeWorkspaceFile,
+  deleteWorkspacePath,
+} = workflowApi;
+
+const workflows = ref<WorkflowSummary[]>([]);
+const selectedWorkflowId = ref<string | null>(null);
+const activeWorkflowId = ref<string | null>(null);
+const showTemplatePicker = ref(false);
+const showConfigDrawer = ref(false);
+const configWorkflowId = ref<string | null>(null);
+const configDefinition = ref<WorkflowDefinition | null>(null);
+const templates = ref<TemplateSummary[]>([]);
+const templatesLoading = ref(false);
+const configSaving = ref(false);
+
+const panelApi = {
+  fetchPhase,
+  fetchGates,
+  fetchDeploymentConfig,
+  fetchResourceContext,
+  listWorkspace,
+  readWorkspaceFile,
+  writeWorkspaceFile,
+  deleteWorkspacePath,
+};
+
 const { streamChat } = useLocalChat();
 
 const loading = ref(true);
@@ -26,12 +83,62 @@ const workflow = ref<WorkflowDefinition | null>(null);
 const state = ref<WorkflowRunState | null>(null);
 const allSkills = ref<string[]>([]);
 const selectedSkills = ref<string[]>([]);
-const centerMode = ref<"step" | "free">("step");
 const viewingStepId = ref<string | null>(null);
 const stepMessages = ref<Record<string, ChatMsg[]>>({});
+const liveOutput = ref<Record<string, string>>({});
 const running = ref(false);
 const advancing = ref(false);
 const actionError = ref<string | null>(null);
+const chatMode = ref<"step" | "free">("step");
+
+const CHAT_PERCENT_KEY = "workflow-chat-percent";
+const CHAT_MIN_PERCENT = 20;
+const CHAT_MAX_PERCENT = 70;
+const resizeContainer = ref<HTMLElement | null>(null);
+const chatPercent = ref(30);
+const isResizing = ref(false);
+
+const mainPanelWidth = computed(() => `calc(${100 - chatPercent.value}% - 4px)`);
+const chatPanelWidth = computed(() => `${chatPercent.value}%`);
+
+function loadChatPercent() {
+  const stored = localStorage.getItem(CHAT_PERCENT_KEY);
+  if (!stored) return;
+  const value = Number(stored);
+  if (Number.isFinite(value)) {
+    chatPercent.value = Math.min(CHAT_MAX_PERCENT, Math.max(CHAT_MIN_PERCENT, value));
+  }
+}
+
+function saveChatPercent() {
+  localStorage.setItem(CHAT_PERCENT_KEY, String(chatPercent.value));
+}
+
+function onResizeMove(e: MouseEvent) {
+  const el = resizeContainer.value;
+  if (!el || !isResizing.value) return;
+  const rect = el.getBoundingClientRect();
+  const pct = ((rect.right - e.clientX) / rect.width) * 100;
+  chatPercent.value = Math.min(CHAT_MAX_PERCENT, Math.max(CHAT_MIN_PERCENT, pct));
+}
+
+function stopResize() {
+  if (!isResizing.value) return;
+  isResizing.value = false;
+  document.removeEventListener("mousemove", onResizeMove);
+  document.removeEventListener("mouseup", stopResize);
+  document.body.style.cursor = "";
+  document.body.style.userSelect = "";
+  saveChatPercent();
+}
+
+function startResize() {
+  isResizing.value = true;
+  document.body.style.cursor = "col-resize";
+  document.body.style.userSelect = "none";
+  document.addEventListener("mousemove", onResizeMove);
+  document.addEventListener("mouseup", stopResize);
+}
 
 const freeThreadId = ref<string>(crypto.randomUUID());
 const {
@@ -41,36 +148,67 @@ const {
   addAssistantChunk: addFreeAssistantChunk,
 } = useMessages(freeThreadId);
 
+const canOperateActive = computed(
+  () =>
+    selectedWorkflowId.value != null &&
+    activeWorkflowId.value != null &&
+    selectedWorkflowId.value === activeWorkflowId.value,
+);
+
+const sidebarSteps = computed(() => {
+  if (!workflow.value || !state.value) return [];
+  return workflow.value.steps.map((step) => ({
+    id: step.id,
+    title: step.title,
+    status: (state.value!.stepStatuses[step.id] ?? "pending") as StepStatus,
+  }));
+});
+
+const configWorkflowSummary = computed(
+  () => workflows.value.find((w) => w.id === configWorkflowId.value) ?? null,
+);
+
+const activeWorkflowTitle = computed(() => {
+  const active = workflows.value.find((w) => w.id === activeWorkflowId.value);
+  return active?.title ?? workflow.value?.title ?? "Workflow";
+});
+
 const currentStep = computed(() => {
-  const id = viewingStepId.value ?? state.value?.currentStepId;
+  const id = activeStepId.value;
   return workflow.value?.steps.find((s) => s.id === id) ?? null;
 });
 
+const currentPanel = computed(() => {
+  const id = activeStepId.value;
+  return id ? stepPanelKind(id) : "agent-run";
+});
+
 const currentStepMessages = computed(() => {
-  const id = viewingStepId.value ?? state.value?.currentStepId;
+  const id = activeStepId.value;
   if (!id) return [];
   return stepMessages.value[id] ?? [];
 });
 
-const statusLabel: Record<StepStatus, string> = {
-  pending: "Pending",
-  running: "Running",
-  done: "Done",
-  failed: "Failed",
-  skipped: "Skipped",
-};
+const currentLiveOutput = computed(() => {
+  const id = activeStepId.value;
+  if (!id) return "";
+  return liveOutput.value[id] ?? "";
+});
 
-const statusClass: Record<StepStatus, string> = {
-  pending: "bg-gray-100 text-gray-600",
-  running: "bg-blue-100 text-blue-700",
-  done: "bg-green-100 text-green-700",
-  failed: "bg-red-100 text-red-700",
-  skipped: "bg-yellow-100 text-yellow-800",
-};
+const currentStepStatus = computed((): StepStatus => {
+  const id = activeStepId.value;
+  if (!id || !state.value) return "pending";
+  return state.value.stepStatuses[id] ?? "pending";
+});
+
+const activeStepId = computed(() => viewingStepId.value ?? state.value?.currentStepId ?? null);
 
 onMounted(() => {
+  loadChatPercent();
   void loadData();
 });
+
+onUnmounted(stopResize);
 
 watch(
   () => state.value?.currentStepId,
@@ -81,23 +219,126 @@ watch(
   },
 );
 
+async function loadSelectedWorkflow() {
+  const id = selectedWorkflowId.value;
+  if (!id) return;
+  const [wf, st] = await Promise.all([fetchWorkflow(id), fetchState(id)]);
+  workflow.value = wf;
+  state.value = st;
+  if (!viewingStepId.value || !wf.steps.some((s) => s.id === viewingStepId.value)) {
+    viewingStepId.value = st.currentStepId;
+  }
+}
+
 async function loadData() {
   loading.value = true;
   error.value = null;
   try {
-    const [wf, st, skills] = await Promise.all([
-      fetchWorkflow(),
-      fetchState(),
-      fetchSkills(),
-    ]);
-    workflow.value = wf;
-    state.value = st;
+    const [list, skills] = await Promise.all([fetchWorkflowList(), fetchSkills()]);
+    workflows.value = list.workflows;
+    activeWorkflowId.value = list.activeWorkflowId;
+    selectedWorkflowId.value = list.activeWorkflowId;
     allSkills.value = skills;
-    viewingStepId.value = st.currentStepId;
+    await loadSelectedWorkflow();
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
   } finally {
     loading.value = false;
+  }
+}
+
+async function onSelectWorkflow(workflowId: string) {
+  selectedWorkflowId.value = workflowId;
+  try {
+    await loadSelectedWorkflow();
+  } catch (err) {
+    actionError.value = err instanceof Error ? err.message : String(err);
+  }
+}
+
+async function openTemplatePicker() {
+  showTemplatePicker.value = true;
+  templatesLoading.value = true;
+  try {
+    const res = await fetchTemplates();
+    templates.value = res.templates;
+  } catch (err) {
+    actionError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    templatesLoading.value = false;
+  }
+}
+
+async function onTemplateSelect(templateId: string) {
+  showTemplatePicker.value = false;
+  try {
+    const { workflowId } = await createFromTemplate(templateId);
+    const list = await fetchWorkflowList();
+    workflows.value = list.workflows;
+    activeWorkflowId.value = list.activeWorkflowId;
+    selectedWorkflowId.value = workflowId;
+    await loadSelectedWorkflow();
+  } catch (err) {
+    actionError.value = err instanceof Error ? err.message : String(err);
+  }
+}
+
+async function openConfigDrawer(workflowId: string) {
+  configWorkflowId.value = workflowId;
+  showConfigDrawer.value = true;
+  try {
+    configDefinition.value = await fetchWorkflow(workflowId);
+  } catch (err) {
+    actionError.value = err instanceof Error ? err.message : String(err);
+  }
+}
+
+async function onConfigSave(definition: WorkflowDefinition) {
+  if (!configWorkflowId.value) return;
+  configSaving.value = true;
+  actionError.value = null;
+  try {
+    await saveWorkflow(configWorkflowId.value, definition);
+    const list = await fetchWorkflowList();
+    workflows.value = list.workflows;
+    if (selectedWorkflowId.value === configWorkflowId.value) {
+      await loadSelectedWorkflow();
+    }
+    showConfigDrawer.value = false;
+  } catch (err) {
+    actionError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    configSaving.value = false;
+  }
+}
+
+async function onConfigActivate() {
+  if (!configWorkflowId.value) return;
+  try {
+    await activateWorkflow(configWorkflowId.value);
+    const list = await fetchWorkflowList();
+    workflows.value = list.workflows;
+    activeWorkflowId.value = list.activeWorkflowId;
+    selectedWorkflowId.value = configWorkflowId.value;
+    await loadSelectedWorkflow();
+    showConfigDrawer.value = false;
+  } catch (err) {
+    actionError.value = err instanceof Error ? err.message : String(err);
+  }
+}
+
+async function onConfigDelete() {
+  if (!configWorkflowId.value) return;
+  try {
+    await deleteWorkflow(configWorkflowId.value);
+    const list = await fetchWorkflowList();
+    workflows.value = list.workflows;
+    activeWorkflowId.value = list.activeWorkflowId;
+    selectedWorkflowId.value = list.activeWorkflowId;
+    showConfigDrawer.value = false;
+    await loadSelectedWorkflow();
+  } catch (err) {
+    actionError.value = err instanceof Error ? err.message : String(err);
   }
 }
 
@@ -125,6 +366,7 @@ function appendStepAssistant(stepId: string, content: string) {
   } else {
     msgs.push({ role: "assistant", content });
   }
+  liveOutput.value[stepId] = (liveOutput.value[stepId] ?? "") + content;
 }
 
 function appendToolNote(stepId: string, event: ToolEvent, phase: "start" | "end") {
@@ -136,10 +378,14 @@ function appendToolNote(stepId: string, event: ToolEvent, phase: "start" | "end"
 }
 
 async function onAdvance(action: "continue" | "skip" | "retry") {
+  if (!canOperateActive.value || !activeWorkflowId.value) {
+    actionError.value = "Switch to the active workflow to run pipeline actions.";
+    return;
+  }
   advancing.value = true;
   actionError.value = null;
   try {
-    state.value = await advance(action);
+    state.value = await advance(action, activeWorkflowId.value);
     viewingStepId.value = state.value.currentStepId;
   } catch (err) {
     actionError.value = err instanceof Error ? err.message : String(err);
@@ -149,19 +395,24 @@ async function onAdvance(action: "continue" | "skip" | "retry") {
 }
 
 async function onStepSend(text: string) {
-  const stepId = viewingStepId.value ?? state.value?.currentStepId;
+  if (!canOperateActive.value || !activeWorkflowId.value) {
+    actionError.value = "Switch to the active workflow to run steps.";
+    return;
+  }
+  const stepId = activeStepId.value;
   if (!stepId) return;
 
   if (!stepMessages.value[stepId]) {
     stepMessages.value[stepId] = [];
   }
   stepMessages.value[stepId].push({ role: "user", content: text });
+  liveOutput.value[stepId] = "";
 
   running.value = true;
   actionError.value = null;
   try {
     const skills = selectedSkills.value.length ? selectedSkills.value : undefined;
-    for await (const event of runStep(stepId, skills)) {
+    for await (const event of runStep(stepId, skills, activeWorkflowId.value)) {
       if (event.type === "message") {
         const content = event.chunk.content ?? "";
         if (content) appendStepAssistant(stepId, content);
@@ -171,7 +422,7 @@ async function onStepSend(text: string) {
         appendToolNote(stepId, event.event, "end");
       }
     }
-    state.value = await fetchState();
+    state.value = await fetchState(activeWorkflowId.value);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     appendStepAssistant(stepId, `\n\nError: ${message}`);
@@ -221,24 +472,30 @@ async function onFreeSend(text: string) {
         class="flex flex-wrap items-center gap-2 border-b border-gray-200 bg-white px-4 py-2"
       >
         <h1 class="text-sm font-semibold text-gray-800">{{ workflow.title }}</h1>
+        <span
+          v-if="!canOperateActive"
+          class="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded"
+        >
+          View only — active: {{ activeWorkflowTitle }}
+        </span>
         <div class="ml-auto flex flex-wrap items-center gap-2">
           <button
             class="btn-primary text-xs py-1 px-3"
-            :disabled="advancing || running"
+            :disabled="advancing || running || !canOperateActive"
             @click="onAdvance('continue')"
           >
             Continue
           </button>
           <button
             class="text-xs px-3 py-1 rounded-lg border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
-            :disabled="advancing || running"
+            :disabled="advancing || running || !canOperateActive"
             @click="onAdvance('skip')"
           >
             Skip
           </button>
           <button
             class="text-xs px-3 py-1 rounded-lg border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
-            :disabled="advancing || running"
+            :disabled="advancing || running || !canOperateActive"
             @click="onAdvance('retry')"
           >
             Retry
@@ -251,146 +508,163 @@ async function onFreeSend(text: string) {
       </p>
 
       <div class="flex flex-1 min-h-0">
-        <aside class="w-52 border-r border-gray-200 bg-gray-50 flex flex-col">
-          <div class="p-3 border-b border-gray-200">
-            <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">
-              Steps
-            </p>
-          </div>
-          <div class="flex-1 overflow-y-auto">
-            <button
-              v-for="step in workflow.steps"
-              :key="step.id"
-              class="w-full text-left px-3 py-2 text-sm border-b border-gray-100 hover:bg-gray-100"
-              :class="
-                (viewingStepId ?? state.currentStepId) === step.id
-                  ? 'bg-blue-50'
-                  : ''
-              "
-              @click="selectStep(step.id)"
-            >
-              <div class="flex items-center justify-between gap-2">
-                <span class="truncate">{{ step.title }}</span>
-                <span
-                  class="text-[10px] px-1.5 py-0.5 rounded-full shrink-0"
-                  :class="statusClass[state.stepStatuses[step.id] ?? 'pending']"
-                >
-                  {{ statusLabel[state.stepStatuses[step.id] ?? "pending"] }}
-                </span>
-              </div>
-            </button>
-          </div>
-        </aside>
+        <WorkflowSidebar
+          :workflows="workflows"
+          :steps="sidebarSteps"
+          :selected-workflow-id="selectedWorkflowId"
+          :active-workflow-id="activeWorkflowId"
+          :viewing-step-id="activeStepId"
+          @select-workflow="onSelectWorkflow"
+          @config-workflow="openConfigDrawer"
+          @select-step="selectStep"
+          @add-workflow="openTemplatePicker"
+        />
 
-        <main class="flex-1 flex flex-col min-w-0">
-          <div class="flex items-center gap-2 border-b border-gray-200 px-4 py-2 bg-white">
-            <button
-              class="text-xs px-2 py-1 rounded"
-              :class="
-                centerMode === 'step'
-                  ? 'bg-blue-100 text-blue-700'
-                  : 'text-gray-600 hover:bg-gray-100'
-              "
-              @click="centerMode = 'step'"
-            >
-              Step Chat
-            </button>
-            <button
-              class="text-xs px-2 py-1 rounded"
-              :class="
-                centerMode === 'free'
-                  ? 'bg-blue-100 text-blue-700'
-                  : 'text-gray-600 hover:bg-gray-100'
-              "
-              @click="centerMode = 'free'"
-            >
-              Free Chat
-            </button>
-
-            <div
-              v-if="centerMode === 'step' && currentStep"
-              class="ml-2 text-xs text-gray-500 truncate"
-            >
-              {{ currentStep.title }}
-              <span v-if="currentStep.executor" class="text-gray-400">
-                · {{ currentStep.executor }}
-              </span>
-            </div>
-          </div>
+        <div ref="resizeContainer" class="flex flex-1 min-w-0 min-h-0">
+          <main
+            class="flex flex-col min-w-0 min-h-0 overflow-hidden border-r border-gray-200"
+            :style="{ width: mainPanelWidth }"
+          >
+            <WorkflowMarkdownPanel
+              v-if="currentPanel === 'markdown-doc'"
+              :api="panelApi"
+            />
+            <WorkflowArchitecturePanel
+              v-else-if="currentPanel === 'architecture'"
+              :api="panelApi"
+            />
+            <WorkflowCodeExplorer
+              v-else-if="currentPanel === 'code-explorer' && activeStepId"
+              :api="panelApi"
+              :root="stepCodeRoot(activeStepId)"
+            />
+            <WorkflowAgentRunPanel
+              v-else-if="currentPanel === 'agent-run' && activeStepId && currentStep"
+              :api="panelApi"
+              :step-id="activeStepId"
+              :step-title="currentStep.title"
+              :status="currentStepStatus"
+              :report-path="stepReportPath(activeStepId)"
+              :running="running && state.currentStepId === activeStepId"
+              :live-output="currentLiveOutput"
+            />
+            <WorkflowCicdPanel
+              v-else-if="currentPanel === 'cicd-config'"
+              :api="panelApi"
+            />
+          </main>
 
           <div
-            v-if="centerMode === 'step'"
-            class="flex flex-wrap gap-1 px-4 py-2 border-b border-gray-100 bg-gray-50"
-          >
-            <span class="text-xs text-gray-500 self-center mr-1">Skills:</span>
-            <button
-              v-for="skill in allSkills"
-              :key="skill"
-              class="text-xs px-2 py-0.5 rounded-full border transition-colors"
-              :class="
-                selectedSkills.includes(skill)
-                  ? 'bg-blue-600 text-white border-blue-600'
-                  : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'
-              "
-              @click="toggleSkill(skill)"
-            >
-              {{ skill }}
-            </button>
-            <span v-if="!allSkills.length" class="text-xs text-gray-400">
-              No skills available
-            </span>
-          </div>
-
-          <div v-if="centerMode === 'step'" class="flex-1 overflow-y-auto p-6">
-            <ChatMessage
-              v-for="(msg, i) in currentStepMessages"
-              :key="`${viewingStepId}-${i}`"
-              :msg="msg"
-            />
-            <div v-if="running" class="text-gray-400 text-sm">Running step…</div>
-            <div
-              v-else-if="!currentStepMessages.length"
-              class="text-gray-400 text-sm"
-            >
-              Send a message to run {{ currentStep?.title ?? "this step" }}.
-            </div>
-          </div>
-
-          <div v-else class="flex-1 overflow-y-auto p-6">
-            <ChatMessage v-for="(msg, i) in freeMessages" :key="i" :msg="msg" />
-            <div v-if="freeLoading" class="text-gray-400 text-sm">Thinking…</div>
-          </div>
-
-          <ChatInput
-            v-if="centerMode === 'step'"
-            :loading="running"
-            @send="onStepSend"
+            class="w-1 shrink-0 cursor-col-resize bg-gray-200 hover:bg-blue-400 active:bg-blue-500 transition-colors"
+            title="Drag to resize chat panel"
+            @mousedown.prevent="startResize"
           />
-          <ChatInput v-else :loading="freeLoading" @send="onFreeSend" />
-        </main>
 
-        <aside class="w-56 border-l border-gray-200 bg-gray-50 flex flex-col">
-          <div class="p-3 border-b border-gray-200">
-            <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">
-              Outputs
-            </p>
-          </div>
-          <div class="flex-1 overflow-y-auto p-3 space-y-3">
-            <div v-if="currentStep?.outputs?.length">
-              <p class="text-xs text-gray-500 mb-1">Expected files</p>
-              <ul class="text-xs text-gray-700 space-y-1">
-                <li v-for="out in currentStep.outputs" :key="out" class="truncate">
-                  {{ out }}
-                </li>
-              </ul>
+          <aside
+            class="flex flex-col min-w-0 min-h-0 bg-white shrink-0"
+            :style="{ width: chatPanelWidth }"
+          >
+            <div class="flex items-center gap-2 border-b border-gray-200 px-3 py-2">
+              <button
+                class="text-xs px-2 py-1 rounded"
+                :class="
+                  chatMode === 'step'
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'text-gray-600 hover:bg-gray-100'
+                "
+                @click="chatMode = 'step'"
+              >
+                Step Chat
+              </button>
+              <button
+                class="text-xs px-2 py-1 rounded"
+                :class="
+                  chatMode === 'free'
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'text-gray-600 hover:bg-gray-100'
+                "
+                @click="chatMode = 'free'"
+              >
+                Free Chat
+              </button>
+              <span
+                v-if="chatMode === 'step' && currentStep"
+                class="ml-auto text-[10px] text-gray-400 truncate max-w-[40%]"
+              >
+                {{ currentStep.title }}
+              </span>
             </div>
-            <div class="card p-3">
-              <p class="text-xs font-medium text-gray-600 mb-1">Git status</p>
-              <p class="text-xs text-gray-400 italic">Placeholder — coming soon</p>
+
+            <div
+              v-if="chatMode === 'step'"
+              class="flex flex-wrap gap-1 px-3 py-2 border-b border-gray-100 bg-gray-50"
+            >
+              <span class="text-[10px] text-gray-500 self-center mr-1">Skills:</span>
+              <button
+                v-for="skill in allSkills"
+                :key="skill"
+                class="text-[10px] px-1.5 py-0.5 rounded-full border transition-colors"
+                :class="
+                  selectedSkills.includes(skill)
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'
+                "
+                @click="toggleSkill(skill)"
+              >
+                {{ skill }}
+              </button>
             </div>
-          </div>
-        </aside>
+
+            <div class="flex-1 overflow-y-auto p-4 min-h-0">
+              <template v-if="chatMode === 'step'">
+                <ChatMessage
+                  v-for="(msg, i) in currentStepMessages"
+                  :key="`${activeStepId}-${i}`"
+                  :msg="msg"
+                />
+                <div v-if="running" class="text-gray-400 text-xs">Running step…</div>
+                <div
+                  v-else-if="!currentStepMessages.length"
+                  class="text-gray-400 text-xs"
+                >
+                  Chat with agent to run {{ currentStep?.title ?? "this step" }}.
+                </div>
+              </template>
+              <template v-else>
+                <ChatMessage v-for="(msg, i) in freeMessages" :key="i" :msg="msg" />
+                <div v-if="freeLoading" class="text-gray-400 text-xs">Thinking…</div>
+              </template>
+            </div>
+
+            <ChatInput
+              v-if="chatMode === 'step'"
+              :loading="running"
+              :disabled="!canOperateActive"
+              @send="onStepSend"
+            />
+            <ChatInput v-else :loading="freeLoading" @send="onFreeSend" />
+          </aside>
+        </div>
       </div>
+
+      <WorkflowTemplatePicker
+        :show="showTemplatePicker"
+        :templates="templates"
+        :loading="templatesLoading"
+        @close="showTemplatePicker = false"
+        @select="onTemplateSelect"
+      />
+
+      <WorkflowConfigDrawer
+        :show="showConfigDrawer"
+        :workflow="configWorkflowSummary"
+        :definition="configDefinition"
+        :saving="configSaving"
+        @close="showConfigDrawer = false"
+        @save="onConfigSave"
+        @activate="onConfigActivate"
+        @delete="onConfigDelete"
+      />
     </template>
   </div>
 </template>

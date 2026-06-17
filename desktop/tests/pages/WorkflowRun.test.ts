@@ -27,15 +27,42 @@ const mockWorkflow = {
       skills: [],
       outputs: ["docs/architecture.md"],
     },
+    {
+      id: "fe-dev",
+      title: "Frontend Development",
+      executor: "claude-code",
+      skills: [],
+      outputs: ["fe/"],
+    },
+    {
+      id: "test",
+      title: "Test",
+      executor: "deepseek",
+      skills: [],
+      outputs: ["test-report.md"],
+    },
+    {
+      id: "cicd",
+      title: "CI/CD",
+      executor: "deepseek",
+      skills: [],
+      outputs: [".github/workflows/"],
+    },
   ],
-  edges: [{ from: "prd", to: "architecture" }],
+  edges: [],
   resources: [],
 };
 
 const mockState = {
   workflowId: "default-dev-cicd",
   currentStepId: "prd",
-  stepStatuses: { prd: "pending" as const, architecture: "pending" as const },
+  stepStatuses: {
+    prd: "pending" as const,
+    architecture: "pending" as const,
+    "fe-dev": "pending" as const,
+    test: "pending" as const,
+    cicd: "pending" as const,
+  },
   threadId: "thread-1",
 };
 
@@ -61,6 +88,15 @@ describe("WorkflowRun", () => {
       "fetch",
       vi.fn(async (input: string | URL) => {
         const url = String(input);
+        if (url.includes("/v1/workflows") && !url.includes("/current") && !url.includes("/templates")) {
+          return new Response(
+            JSON.stringify({
+              workflows: [{ id: "default-dev-cicd", title: "Dev to CI/CD Pipeline", isLegacy: true, isActive: true }],
+              activeWorkflowId: "default-dev-cicd",
+            }),
+            { status: 200 },
+          );
+        }
         if (url.includes("/v1/workflows/current")) {
           return new Response(JSON.stringify(mockWorkflow), { status: 200 });
         }
@@ -71,6 +107,18 @@ describe("WorkflowRun", () => {
           return new Response(JSON.stringify(["brainstorming", "writing-plans"]), {
             status: 200,
           });
+        }
+        if (url.includes("/v1/workspace/list")) {
+          return new Response(
+            JSON.stringify({ path: "docs", entries: [{ name: "PRD.md", path: "docs/PRD.md", type: "file" }] }),
+            { status: 200 },
+          );
+        }
+        if (url.includes("/v1/workspace/file")) {
+          return new Response(
+            JSON.stringify({ path: "docs/PRD.md", content: "# PRD\n\nSample" }),
+            { status: 200 },
+          );
         }
         return new Response("not found", { status: 404 });
       }),
@@ -89,7 +137,25 @@ describe("WorkflowRun", () => {
     expect(wrapper.text()).toContain("Architecture");
     expect(wrapper.text()).toContain("Pending");
     expect(wrapper.text()).toContain("Continue");
-    expect(wrapper.text()).toContain("Free Chat");
+    expect(wrapper.text()).toContain("Step Chat");
+    expect(wrapper.text()).toContain("Documents");
+  });
+
+  it("shows architecture panel when architecture step selected", async () => {
+    const wrapper = mount(WorkflowRun, {
+      props: { workspace: "/tmp/project" },
+    });
+    await flushPromises();
+    await flushPromises();
+
+    const archBtn = wrapper
+      .findAll("button")
+      .find((b) => b.text().includes("Architecture") && b.text().includes("Pending"));
+    expect(archBtn).toBeDefined();
+    await archBtn!.trigger("click");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("docs/architecture.md");
   });
 
   it("switches to Free Chat tab", async () => {

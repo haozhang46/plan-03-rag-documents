@@ -6,6 +6,7 @@ import { startAgentServer } from "./agent/server";
 import { startExecutorServer } from "./executor/server";
 import { clearApiKey, loadApiKey, saveApiKey } from "./settings/keychain";
 import { initProjectFromTemplate } from "./workflow/loader";
+import { ensureLangflowRunning, stopLangflow } from "./langflow/manager";
 
 const AGENT_PORT = 8765;
 const EXECUTOR_PORT = 17351;
@@ -78,6 +79,8 @@ type AgentflowSettings = {
   resourceServerUrl?: string;
   langflowBaseUrl?: string;
   langflowApiKey?: string;
+  langflowAutoStart?: boolean;
+  langflowPort?: number;
 };
 
 async function loadSettings(): Promise<AgentflowSettings> {
@@ -121,6 +124,12 @@ app.whenReady().then(async () => {
   await refreshResourceServerUrl();
   startExecutorServer(EXECUTOR_PORT);
   restartAgentServer();
+  const settings = await loadSettings();
+  void ensureLangflowRunning(settings).then((result) => {
+    if (!result.ok) {
+      console.warn("[langflow] auto-start:", result.detail ?? "unreachable");
+    }
+  });
   createWindow();
 
   ipcMain.handle("settings:getApiKey", () => (loadApiKey() ? "***configured***" : ""));
@@ -159,6 +168,20 @@ app.whenReady().then(async () => {
     return true;
   });
 
+  ipcMain.handle("settings:getLangflowAutoStart", async () => {
+    const settings = await loadSettings();
+    return settings.langflowAutoStart !== false;
+  });
+  ipcMain.handle("settings:setLangflowAutoStart", async (_e, enabled: boolean) => {
+    await saveSettings({ langflowAutoStart: enabled });
+    return true;
+  });
+  ipcMain.handle("langflow:restart", async () => {
+    await stopLangflow();
+    const settings = await loadSettings();
+    return ensureLangflowRunning(settings);
+  });
+
   ipcMain.handle("workspace:get", () => workspaceRoot);
   ipcMain.handle("workspace:pick", async () => {
     const result = await dialog.showOpenDialog({ properties: ["openDirectory"] });
@@ -181,6 +204,10 @@ app.whenReady().then(async () => {
   ipcMain.handle("project:recent", () => loadRecentProjects());
 
   ipcMain.handle("sidecar:port", () => AGENT_PORT);
+});
+
+app.on("before-quit", () => {
+  void stopLangflow();
 });
 
 app.on("window-all-closed", () => {

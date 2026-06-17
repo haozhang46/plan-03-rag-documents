@@ -46,19 +46,15 @@ function parseFlowList(data: unknown): FlowListItem[] {
   return [];
 }
 
+const HEALTH_FETCH_TIMEOUT_MS = 5_000;
+
 export async function checkHealth(config: LangflowConfig): Promise<boolean> {
   try {
-    const health = await langflowFetch(config, "/health", { method: "GET" });
-    if (health.ok) {
-      return true;
-    }
-  } catch {
-    // fall through to flows probe
-  }
-
-  try {
-    const flows = await langflowFetch(config, "/api/v1/flows/?page=1&size=1", { method: "GET" });
-    return flows.ok;
+    const health = await langflowFetch(config, "/health", {
+      method: "GET",
+      signal: AbortSignal.timeout(HEALTH_FETCH_TIMEOUT_MS),
+    });
+    return health.ok;
   } catch {
     return false;
   }
@@ -145,6 +141,30 @@ export async function getFlow(
   return { id: flow.id, name: flow.name, data: flow.data ?? {} };
 }
 
+export async function listProjects(
+  config: LangflowConfig,
+): Promise<Array<{ id: string; name: string }>> {
+  const res = await langflowFetch(config, "/api/v1/projects/", { method: "GET" });
+  if (!res.ok) {
+    if (res.status === 403) {
+      throw new Error(
+        "Langflow API key required — open Settings and paste your Langflow API key (or restart the app to auto-provision one)",
+      );
+    }
+    throw new Error(`Failed to list Langflow projects: ${res.status}`);
+  }
+
+  const data = await res.json();
+  if (!Array.isArray(data)) {
+    return [];
+  }
+  return data
+    .filter((item): item is { id: string; name: string } => {
+      return Boolean(item && typeof item === "object" && "id" in item && "name" in item);
+    })
+    .map((item) => ({ id: item.id, name: item.name }));
+}
+
 export async function createProject(
   config: LangflowConfig,
   name: string,
@@ -159,10 +179,24 @@ export async function createProject(
     return flows.find((flow) => flow.project_id)?.project_id;
   }
 
+  if (res.status === 403) {
+    throw new Error(
+      "Langflow API key required — open Settings and paste your Langflow API key (or restart the app to auto-provision one)",
+    );
+  }
+
   if (!res.ok) {
     throw new Error(`Failed to create Langflow project: ${res.status}`);
   }
 
   const project = (await res.json()) as { id?: string };
   return project.id;
+}
+
+export async function findProjectIdByName(
+  config: LangflowConfig,
+  name: string,
+): Promise<string | undefined> {
+  const projects = await listProjects(config);
+  return projects.find((project) => project.name === name)?.id;
 }

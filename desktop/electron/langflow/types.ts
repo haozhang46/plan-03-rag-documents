@@ -18,6 +18,6 @@ export type LangflowFlowSummary = {
 export type LangflowStatus = {
   ok: boolean;
   baseUrl: string;
-  mode: "external";
+  mode: "external" | "spawned" | "off";
   detail?: string;
 };

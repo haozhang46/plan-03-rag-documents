@@ -14,6 +14,11 @@ contextBridge.exposeInMainWorld("desktop", {
     ipcRenderer.invoke("settings:getLangflowApiKeyStatus") as Promise<string>,
   setLangflow: (baseUrl: string, apiKey: string) =>
     ipcRenderer.invoke("settings:setLangflow", baseUrl, apiKey) as Promise<boolean>,
+  getLangflowAutoStart: () =>
+    ipcRenderer.invoke("settings:getLangflowAutoStart") as Promise<boolean>,
+  setLangflowAutoStart: (enabled: boolean) =>
+    ipcRenderer.invoke("settings:setLangflowAutoStart", enabled) as Promise<boolean>,
+  restartLangflow: () => ipcRenderer.invoke("langflow:restart") as Promise<unknown>,
   getWorkspace: () => ipcRenderer.invoke("workspace:get") as Promise<string>,
   pickWorkspace: () => ipcRenderer.invoke("workspace:pick") as Promise<string>,
   pickProjectDirectory: () =>
@@ -33,6 +38,9 @@ export type DesktopApi = {
   getLangflowBaseUrl: () => Promise<string>;
   getLangflowApiKeyStatus: () => Promise<string>;
   setLangflow: (baseUrl: string, apiKey: string) => Promise<boolean>;
+  getLangflowAutoStart: () => Promise<boolean>;
+  setLangflowAutoStart: (enabled: boolean) => Promise<boolean>;
+  restartLangflow: () => Promise<unknown>;
   getWorkspace: () => Promise<string>;
   pickWorkspace: () => Promise<string>;
   pickProjectDirectory: () => Promise<string>;
