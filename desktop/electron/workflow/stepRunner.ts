@@ -3,6 +3,12 @@ import {
   resolveResources,
   stepNeedsResourceContext,
 } from "../resources/resolver";
+import {
+  combineResourceAndTopologyContext,
+  formatTopologyContextForPrompt,
+  projectIdFromRoot,
+  resolveTopology,
+} from "../resources/topology";
 import { getExecutor } from "../executors/registry";
 import type { StepEvent } from "../executors/types";
 import { dispatch, getNextActiveStepId } from "./dispatcher";
@@ -128,7 +134,14 @@ export class StepRunner {
       if (stepNeedsResourceContext(stepId, step.requires_resources)) {
         const serverUrl = this.getResourceServerUrl?.() ?? undefined;
         const resolved = await resolveResources(this.projectRoot, serverUrl ?? undefined);
-        resourceContext = formatResourceContextForPrompt(resolved);
+        const resourceMarkdown = formatResourceContextForPrompt(resolved);
+        const topology = await resolveTopology(
+          this.projectRoot,
+          serverUrl ?? undefined,
+          projectIdFromRoot(this.projectRoot),
+        );
+        const topologyMarkdown = topology ? formatTopologyContextForPrompt(topology) : "";
+        resourceContext = combineResourceAndTopologyContext(resourceMarkdown, topologyMarkdown);
       }
 
       const priorPhase =

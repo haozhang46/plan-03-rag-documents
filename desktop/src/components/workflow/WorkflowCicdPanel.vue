@@ -1,16 +1,17 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
-import type { DeploymentConfig, useWorkflow } from "../../composables/useWorkflow";
+import type { DeploymentConfig, Topology, useWorkflow } from "../../composables/useWorkflow";
 
 type WorkflowApi = Pick<
   ReturnType<typeof useWorkflow>,
-  "fetchDeploymentConfig" | "fetchResourceContext" | "readWorkspaceFile"
+  "fetchDeploymentConfig" | "fetchResourceContext" | "fetchTopology" | "readWorkspaceFile"
 >;
 
 const props = defineProps<{ api: WorkflowApi }>();
 
 const config = ref<DeploymentConfig | null>(null);
 const resourceMarkdown = ref("");
+const topology = ref<Topology | null>(null);
 const composeContent = ref<string | null>(null);
 const loading = ref(false);
 const error = ref<string | null>(null);
@@ -25,12 +26,14 @@ async function load() {
   loading.value = true;
   error.value = null;
   try {
-    const [deploy, resources] = await Promise.all([
+    const [deploy, resources, topo] = await Promise.all([
       props.api.fetchDeploymentConfig(),
       props.api.fetchResourceContext(),
+      props.api.fetchTopology(),
     ]);
     config.value = deploy;
     resourceMarkdown.value = resources.markdown;
+    topology.value = topo.topology;
 
     if (deploy.composeFile) {
       try {
@@ -89,6 +92,23 @@ onMounted(() => {
         <div class="card p-3">
           <p class="text-[10px] uppercase text-gray-500 mb-1">Workflows</p>
           <p class="text-sm font-medium text-gray-800">{{ config.workflowFiles.length }}</p>
+        </div>
+      </section>
+
+      <section v-if="topology?.nodes?.length" class="p-4 border-b border-gray-100">
+        <h3 class="text-xs font-semibold text-gray-600 mb-2">Service Topology</h3>
+        <div class="space-y-1 text-xs">
+          <div v-for="node in topology.nodes" :key="node.id" class="bg-gray-50 rounded-lg px-3 py-2 font-mono">
+            <span class="font-medium text-gray-800">{{ node.id }}</span>
+            <span class="text-gray-500"> ({{ node.engine ?? node.kind }})</span>
+          </div>
+          <div
+            v-for="(edge, idx) in topology.edges"
+            :key="`${edge.from}-${edge.to}-${idx}`"
+            class="text-gray-600 px-3"
+          >
+            {{ edge.from }} → {{ edge.to }}
+          </div>
         </div>
       </section>
 

@@ -4,6 +4,13 @@ import {
   resolveResources,
   type ResolvedResource,
 } from "../resources/resolver";
+import {
+  combineResourceAndTopologyContext,
+  formatTopologyContextForPrompt,
+  projectIdFromRoot,
+  resolveTopology,
+  type Topology,
+} from "../resources/topology";
 import { dispatch } from "./dispatcher";
 import { compareEvalReports, runHarnessEval, type EvalReport } from "./eval";
 import { getActiveWorkflowId, loadWorkflow } from "./loader";
@@ -57,12 +64,20 @@ export function clearRunner(workspaceRoot: string, workflowId?: string): void {
 export async function getResourceContext(
   workspaceRoot: string,
   getResourceServerUrl?: () => string | null,
-): Promise<{ markdown: string; resources: ResolvedResource[] }> {
+): Promise<{ markdown: string; resources: ResolvedResource[]; topology: Topology | null }> {
   const serverUrl = getResourceServerUrl?.() ?? undefined;
   const resources = await resolveResources(workspaceRoot, serverUrl ?? undefined);
+  const resourceMarkdown = formatResourceContextForPrompt(resources);
+  const topology = await resolveTopology(
+    workspaceRoot,
+    serverUrl ?? undefined,
+    projectIdFromRoot(workspaceRoot),
+  );
+  const topologyMarkdown = topology ? formatTopologyContextForPrompt(topology) : "";
   return {
-    markdown: formatResourceContextForPrompt(resources),
+    markdown: combineResourceAndTopologyContext(resourceMarkdown, topologyMarkdown),
     resources,
+    topology,
   };
 }
 

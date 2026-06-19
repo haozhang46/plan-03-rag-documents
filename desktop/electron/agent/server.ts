@@ -402,6 +402,17 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
+    if (req.method === "GET" && url === "/v1/resources/topology") {
+      try {
+        const context = await getResourceContext(getWorkspaceRoot(), getResourceServerUrl);
+        jsonResponse(res, 200, { topology: context.topology });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        jsonResponse(res, 500, { detail: message });
+      }
+      return;
+    }
+
     if (req.method === "GET" && url?.startsWith("/v1/workspace/list")) {
       const query = parseQuery(req.url ?? "");
       const relPath = query.get("path") ?? "";

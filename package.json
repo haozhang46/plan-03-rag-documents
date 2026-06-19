@@ -3,8 +3,10 @@
   "private": true,
   "scripts": {
     "dev:desktop": "pnpm --filter agent-flow-desktop dev",
+    "dev:resource-server": "cd resource-server && uvicorn app.main:app --reload --port 9000",
     "test:backend": "cd backend && pytest -v",
     "test:fe": "pnpm --filter agent-flow-fe test",
-    "test:desktop": "pnpm --filter agent-flow-desktop test"
+    "test:desktop": "pnpm --filter agent-flow-desktop test",
+    "test:resource-server": "cd resource-server && pytest -v"
   }
 }

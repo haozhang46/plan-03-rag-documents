@@ -75,6 +75,25 @@ export interface DeploymentConfig {
   workflowFiles: string[];
 }
 
+export interface TopologyNode {
+  id: string;
+  kind: string;
+  engine?: string;
+}
+
+export interface TopologyEdge {
+  from: string;
+  to: string;
+}
+
+export interface Topology {
+  version: 1;
+  project: string;
+  nodes: TopologyNode[];
+  edges: TopologyEdge[];
+  targets: { id: string; type: string; env?: string }[];
+}
+
 async function apiBase(): Promise<string> {
   const port = await window.desktop.getSidecarPort();
   return `http://127.0.0.1:${port}`;
@@ -151,8 +170,13 @@ export function useWorkflow() {
   async function fetchResourceContext(): Promise<{
     markdown: string;
     resources: ResolvedResource[];
+    topology: Topology | null;
   }> {
     return apiJson("/v1/resources/context");
+  }
+
+  async function fetchTopology(): Promise<{ topology: Topology | null }> {
+    return apiJson("/v1/resources/topology");
   }
 
   async function fetchPhase(stepId: string): Promise<{ stepId: string; content: string | null }> {
@@ -239,6 +263,7 @@ export function useWorkflow() {
     deleteWorkflow,
     fetchSkills,
     fetchResourceContext,
+    fetchTopology,
     fetchPhase,
     fetchGates,
     fetchDeploymentConfig,

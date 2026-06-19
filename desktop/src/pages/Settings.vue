@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 
 const emit = defineEmits<{ back: [] }>();
 
@@ -33,6 +33,11 @@ async function clearApiKey() {
 async function saveResourceServerUrl() {
   await window.desktop.setResourceServerUrl(resourceServerUrl.value);
 }
+
+const topologyPanelUrl = computed(() => {
+  const base = resourceServerUrl.value.trim().replace(/\/$/, "");
+  return base ? `${base}/ui/` : "";
+});
 
 async function saveLangflow() {
   await window.desktop.setLangflow(langflowBaseUrl.value, langflowApiKeyInput.value);
@@ -82,6 +87,11 @@ async function toggleLangflowAutoStart() {
         placeholder="http://localhost:9000"
       />
       <button class="btn-primary" @click="saveResourceServerUrl">Save URL</button>
+      <p v-if="topologyPanelUrl" class="text-sm mt-3">
+        <a :href="topologyPanelUrl" target="_blank" rel="noopener noreferrer" class="text-blue-600">
+          Open Topology Panel
+        </a>
+      </p>
     </section>
 
     <section>
