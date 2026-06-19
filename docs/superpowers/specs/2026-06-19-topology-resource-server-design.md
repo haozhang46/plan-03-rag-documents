@@ -287,8 +287,8 @@ Tools evaluated for adapter/UI integration (not vendored):
 
 ## 12. Success Criteria
 
-- [ ] Operator can define api → mysql → redis topology in Web UI without editing YAML by hand
-- [ ] Desktop `cicd` step receives topology + instances in system prompt when Resource Server URL is set
-- [ ] Compose file in project can be imported to Server and re-exported without data loss (services, depends_on, ports)
-- [ ] Works with Resource Server URL empty (local-only fallback unchanged)
-- [ ] No automatic production mutations in v1
+- [x] Operator can define api → mysql → redis topology in Web UI without editing YAML by hand
+- [x] Desktop `cicd` step receives topology + instances in system prompt when Resource Server URL is set
+- [x] Compose file in project can be imported to Server and re-exported without data loss (services, depends_on, ports)
+- [x] Works with Resource Server URL empty (local-only fallback unchanged)
+- [x] No automatic production mutations in v1
