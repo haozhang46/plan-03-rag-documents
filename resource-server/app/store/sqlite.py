@@ -2,7 +2,7 @@ import json
 import sqlite3
 from pathlib import Path
 
-from app.models.topology import InstancesConfig, Topology
+from app.models.topology import Topology
 
 
 class TopologyStore:

@@ -1,0 +1,19 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    depends_on:
+      - app-db
+      - cache
+    environment:
+      DATABASE_URL: mysql://app:secret@app-db:3306/myapp
+      REDIS_URL: redis://cache:6379/0
+  app-db:
+    image: mysql:8.0
+    ports:
+      - "3306:3306"
+  cache:
+    image: redis:7
+    ports:
+      - "6379:6379"
