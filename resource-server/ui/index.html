@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AgentFlow Topology</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; display: grid; grid-template-columns: 280px 1fr; min-height: 100vh; }
+    aside { border-right: 1px solid #e5e7eb; padding: 1rem; background: #f9fafb; }
+    main { padding: 1rem; }
+    label { display: block; font-size: 12px; color: #6b7280; margin-bottom: 4px; }
+    input, textarea, select, button { width: 100%; box-sizing: border-box; margin-bottom: 10px; }
+    button { cursor: pointer; background: #2563eb; color: white; border: none; padding: 8px; border-radius: 6px; }
+    button.secondary { background: #6b7280; }
+    .node, .edge { background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px; margin-bottom: 8px; font-size: 13px; }
+    pre { background: #111827; color: #f3f4f6; padding: 12px; border-radius: 8px; overflow: auto; font-size: 12px; }
+    h1 { font-size: 18px; margin: 0 0 12px; }
+    h2 { font-size: 14px; margin: 16px 0 8px; }
+  </style>
+</head>
+<body>
+  <aside>
+    <h1>Topology Panel</h1>
+    <label for="project">Project ID</label>
+    <input id="project" value="demo" />
+    <button id="load">Load</button>
+    <button id="save" class="secondary">Save</button>
+    <h2>Add node</h2>
+    <label for="nodeId">ID</label>
+    <input id="nodeId" placeholder="api" />
+    <label for="nodeKind">Kind</label>
+    <select id="nodeKind">
+      <option value="service">service</option>
+      <option value="database">database</option>
+      <option value="cache">cache</option>
+      <option value="gateway">gateway</option>
+      <option value="worker">worker</option>
+    </select>
+    <label for="nodeEngine">Engine (optional)</label>
+    <input id="nodeEngine" placeholder="mysql" />
+    <button id="addNode">Add node</button>
+    <h2>Add edge</h2>
+    <input id="edgeFrom" placeholder="from" />
+    <input id="edgeTo" placeholder="to" />
+    <button id="addEdge">Add edge</button>
+  </aside>
+  <main>
+    <h2>Nodes</h2>
+    <div id="nodes"></div>
+    <h2>Edges</h2>
+    <div id="edges"></div>
+    <h2>Import compose</h2>
+    <textarea id="composeImport" rows="8" placeholder="Paste docker-compose.yml"></textarea>
+    <button id="importCompose">Import compose</button>
+    <h2>Export compose</h2>
+    <button id="exportCompose">Export compose</button>
+    <pre id="exportOutput"></pre>
+  </main>
+  <script>
+    let topology = { version: 1, project: "demo", nodes: [], edges: [], targets: [] };
+
+    function projectId() {
+      return document.getElementById("project").value.trim() || "demo";
+    }
+
+    function render() {
+      document.getElementById("nodes").innerHTML = topology.nodes.map(n =>
+        `<div class="node"><strong>${n.id}</strong> (${n.kind}${n.engine ? ", " + n.engine : ""})</div>`
+      ).join("") || "<p>No nodes</p>";
+      document.getElementById("edges").innerHTML = topology.edges.map(e =>
+        `<div class="edge">${e.from} → ${e.to}</div>`
+      ).join("") || "<p>No edges</p>";
+    }
+
+    async function loadTopology() {
+      const res = await fetch(`/v1/topology?project=${encodeURIComponent(projectId())}`);
+      if (res.status === 404) {
+        topology = { version: 1, project: projectId(), nodes: [], edges: [], targets: [] };
+      } else {
+        topology = await res.json();
+      }
+      render();
+    }
+
+    document.getElementById("load").onclick = () => loadTopology();
+    document.getElementById("save").onclick = async () => {
+      topology.project = projectId();
+      await fetch(`/v1/topology?project=${encodeURIComponent(projectId())}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(topology),
+      });
+      await loadTopology();
+    };
+    document.getElementById("addNode").onclick = () => {
+      const id = document.getElementById("nodeId").value.trim();
+      if (!id) return;
+      topology.nodes.push({
+        id,
+        kind: document.getElementById("nodeKind").value,
+        engine: document.getElementById("nodeEngine").value.trim() || null,
+        ports: [],
+      });
+      render();
+    };
+    document.getElementById("addEdge").onclick = () => {
+      const from = document.getElementById("edgeFrom").value.trim();
+      const to = document.getElementById("edgeTo").value.trim();
+      if (!from || !to) return;
+      topology.edges.push({ from, to, env: {} });
+      render();
+    };
+    document.getElementById("importCompose").onclick = async () => {
+      const content = document.getElementById("composeImport").value;
+      const res = await fetch(`/v1/topology/import?project=${encodeURIComponent(projectId())}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ format: "compose", content }),
+      });
+      topology = await res.json();
+      render();
+    };
+    document.getElementById("exportCompose").onclick = async () => {
+      const res = await fetch(`/v1/topology/export?project=${encodeURIComponent(projectId())}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ format: "compose" }),
+      });
+      const data = await res.json();
+      document.getElementById("exportOutput").textContent = data.content || "";
+    };
+
+    loadTopology();
+  </script>
+</body>
+</html>
