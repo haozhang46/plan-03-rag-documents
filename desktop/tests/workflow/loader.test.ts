@@ -74,6 +74,28 @@ describe("loadWorkflow", () => {
       .catch(() => false);
     expect(exists).toBe(true);
   });
+
+  it("initProjectFromTemplate copies bundled workspaces into .agentflow/workspaces", async () => {
+    const project = path.join(tmp, "proj");
+    await fs.mkdir(project, { recursive: true });
+    await initProjectFromTemplate(project, "default-dev-cicd");
+    const wsDir = path.join(project, ".agentflow/workspaces");
+    const files = (await fs.readdir(wsDir)).sort();
+    expect(files).toEqual([
+      "architecture.workspace.json",
+      "be-dev.workspace.json",
+      "cicd.workspace.json",
+      "fe-dev.workspace.json",
+      "prd.workspace.json",
+      "review.workspace.json",
+      "test-2.workspace.json",
+      "test.workspace.json",
+    ]);
+    const feDev = JSON.parse(
+      await fs.readFile(path.join(wsDir, "fe-dev.workspace.json"), "utf8"),
+    ) as { components: unknown[] };
+    expect(feDev.components).toHaveLength(4);
+  });
 });
 
 describe("multi-workflow loader", () => {
@@ -124,6 +146,15 @@ describe("multi-workflow loader", () => {
     expect(wf.steps.length).toBeGreaterThan(0);
     const nestedPath = path.join(tmp, ".agentflow/workflows/my-copy/workflow.yaml");
     await expect(fs.access(nestedPath)).resolves.toBeUndefined();
+  });
+
+  it("createWorkflowFromTemplate copies bundled workspaces alongside workflow.yaml", async () => {
+    const id = await createWorkflowFromTemplate(tmp, "default-dev-cicd", "with-workspaces");
+    const wsDir = path.join(tmp, ".agentflow/workflows", id, "workspaces");
+    const files = (await fs.readdir(wsDir)).sort();
+    expect(files).toContain("fe-dev.workspace.json");
+    expect(files).toContain("prd.workspace.json");
+    expect(files).toHaveLength(8);
   });
 
   it("createWorkflowFromTemplate suffixes on id conflict", async () => {

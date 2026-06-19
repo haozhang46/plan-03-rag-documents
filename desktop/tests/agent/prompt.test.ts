@@ -15,5 +15,8 @@ describe("buildChatSystemPrompt", () => {
   it("includes agent tooling preamble", async () => {
     const prompt = await buildChatSystemPrompt("agent", "/tmp/project", []);
     expect(prompt).toContain("autonomous dev agent");
+    expect(prompt).toContain("workspace_*");
+    expect(prompt).toContain("workspace_list_registry");
+    expect(prompt).toContain("langflow-panel");
   });
 });

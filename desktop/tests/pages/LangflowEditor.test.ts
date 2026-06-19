@@ -72,7 +72,7 @@ describe("LangflowEditor", () => {
     await flushPromises();
     expect(wrapper.text()).toContain("Pipeline A");
     expect(wrapper.text()).toContain("Active");
-    expect(wrapper.text()).toContain("Set as Active Workflow");
+    expect(wrapper.text()).toContain("Save Active Flow");
   });
 
   it("selects another flow when sidebar item clicked", async () => {

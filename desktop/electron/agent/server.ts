@@ -1,4 +1,5 @@
 import http from "node:http";
+import { ZodError } from "zod";
 import { agentService, type ChatMode } from "./agentService";
 import { listSkillCatalog, listSkills } from "../skills/loader";
 import {
@@ -36,6 +37,14 @@ import {
   workspaceReadPhase,
   workspaceWriteFile,
 } from "../workspace/service";
+import {
+  loadWorkspace,
+  listWorkspaces,
+  resolveWorkflowLegacy,
+  saveWorkspace,
+  workspacePath,
+} from "../workflow/workspaceLoader";
+import { WORKSPACE_REGISTRY } from "../workflow/workspaceRegistry";
 
 export type AgentServerOptions = {
   port: number;
@@ -73,6 +82,32 @@ function parseQuery(url: string): URLSearchParams {
 function workflowIdFromQuery(reqUrl: string | undefined): string | undefined {
   const id = parseQuery(reqUrl ?? "").get("workflowId");
   return id && id.trim() ? id.trim() : undefined;
+}
+
+function zodErrorDetail(err: ZodError): { detail: string; errors: ZodError["errors"] } {
+  return {
+    detail: err.errors
+      .map((e) => `${e.path.length ? e.path.join(".") : "root"}: ${e.message}`)
+      .join("; "),
+    errors: err.errors,
+  };
+}
+
+function isWorkflowNotFound(err: unknown): boolean {
+  return err instanceof Error && err.message.startsWith("Workflow not found:");
+}
+
+function isStepIdMismatch(err: unknown): boolean {
+  return err instanceof Error && err.message.includes("stepId mismatch");
+}
+
+function isFileNotFound(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    (err as NodeJS.ErrnoException).code === "ENOENT"
+  );
 }
 
 export function startAgentServer(options: AgentServerOptions): http.Server {
@@ -236,6 +271,93 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         jsonResponse(res, 400, { detail: message });
+      }
+      return;
+    }
+
+    const workflowWorkspaceMatch = url?.match(
+      /^\/v1\/workflows\/([^/]+)\/workspaces\/([^/]+)$/,
+    );
+    if (workflowWorkspaceMatch) {
+      const workflowId = decodeURIComponent(workflowWorkspaceMatch[1]);
+      const stepId = decodeURIComponent(workflowWorkspaceMatch[2]);
+
+      if (req.method === "GET") {
+        try {
+          const workspaceRoot = getWorkspaceRoot();
+          const isLegacy = await resolveWorkflowLegacy(workspaceRoot, workflowId);
+          const filePath = workspacePath(workspaceRoot, workflowId, stepId, isLegacy);
+          const workspace = await loadWorkspace(filePath);
+          jsonResponse(res, 200, workspace);
+        } catch (err) {
+          if (isWorkflowNotFound(err)) {
+            jsonResponse(res, 404, { detail: (err as Error).message });
+            return;
+          }
+          if (isFileNotFound(err)) {
+            jsonResponse(res, 404, { detail: `Workspace not found: ${stepId}` });
+            return;
+          }
+          if (err instanceof ZodError) {
+            jsonResponse(res, 400, zodErrorDetail(err));
+            return;
+          }
+          const message = err instanceof Error ? err.message : String(err);
+          jsonResponse(res, 500, { detail: message });
+        }
+        return;
+      }
+
+      if (req.method === "PUT") {
+        let payload: unknown;
+        try {
+          payload = JSON.parse(await readBody(req));
+        } catch {
+          jsonResponse(res, 400, { detail: "invalid JSON" });
+          return;
+        }
+
+        try {
+          const workspaceRoot = getWorkspaceRoot();
+          const isLegacy = await resolveWorkflowLegacy(workspaceRoot, workflowId);
+          const filePath = workspacePath(workspaceRoot, workflowId, stepId, isLegacy);
+          const workspace = await saveWorkspace(filePath, payload, stepId);
+          jsonResponse(res, 200, workspace);
+        } catch (err) {
+          if (isWorkflowNotFound(err)) {
+            jsonResponse(res, 404, { detail: (err as Error).message });
+            return;
+          }
+          if (err instanceof ZodError) {
+            jsonResponse(res, 400, zodErrorDetail(err));
+            return;
+          }
+          if (isStepIdMismatch(err)) {
+            jsonResponse(res, 400, { detail: (err as Error).message });
+            return;
+          }
+          const message = err instanceof Error ? err.message : String(err);
+          jsonResponse(res, 500, { detail: message });
+        }
+        return;
+      }
+    }
+
+    const workflowWorkspacesListMatch = url?.match(/^\/v1\/workflows\/([^/]+)\/workspaces$/);
+    if (req.method === "GET" && workflowWorkspacesListMatch) {
+      const workflowId = decodeURIComponent(workflowWorkspacesListMatch[1]);
+      try {
+        const workspaceRoot = getWorkspaceRoot();
+        const isLegacy = await resolveWorkflowLegacy(workspaceRoot, workflowId);
+        const stepIds = await listWorkspaces(workspaceRoot, workflowId, isLegacy);
+        jsonResponse(res, 200, { workflowId, stepIds });
+      } catch (err) {
+        if (isWorkflowNotFound(err)) {
+          jsonResponse(res, 404, { detail: (err as Error).message });
+          return;
+        }
+        const message = err instanceof Error ? err.message : String(err);
+        jsonResponse(res, 500, { detail: message });
       }
       return;
     }
@@ -410,6 +532,11 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
         const message = err instanceof Error ? err.message : String(err);
         jsonResponse(res, 500, { detail: message });
       }
+      return;
+    }
+
+    if (req.method === "GET" && url === "/v1/workspace/registry") {
+      jsonResponse(res, 200, { components: WORKSPACE_REGISTRY });
       return;
     }
 
@@ -603,7 +730,19 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
           payload.langflowJson as Parameters<typeof compileAndWriteWorkflow>[1],
         );
         clearRunner(workspaceRoot);
-        jsonResponse(res, 200, workflow);
+        const deprecationNote =
+          "Langflow compile to workflow.yaml is deprecated. Author project workflows via workflow.yaml, templates, or Workflow Designer; use Langflow for agent flows only.";
+        res.writeHead(200, {
+          "Content-Type": "application/json",
+          Deprecation: "true",
+        });
+        res.end(
+          JSON.stringify({
+            ...workflow,
+            deprecated: true,
+            deprecationNote,
+          }),
+        );
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         jsonResponse(res, 500, { detail: message });

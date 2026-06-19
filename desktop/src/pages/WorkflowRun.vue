@@ -8,17 +8,20 @@ import {
   type ToolEvent,
 } from "@agent-flow/shared-ui";
 import { useLocalChat } from "../composables/useLocalChat";
-import WorkflowAgentRunPanel from "../components/workflow/WorkflowAgentRunPanel.vue";
-import WorkflowArchitecturePanel from "../components/workflow/WorkflowArchitecturePanel.vue";
-import WorkflowCicdPanel from "../components/workflow/WorkflowCicdPanel.vue";
-import WorkflowCodeExplorer from "../components/workflow/WorkflowCodeExplorer.vue";
-import WorkflowMarkdownPanel from "../components/workflow/WorkflowMarkdownPanel.vue";
+import { useWorkspaceConfig } from "../composables/useWorkspaceConfig";
 import WorkflowConfigDrawer from "../components/workflow/WorkflowConfigDrawer.vue";
+import WorkspaceDesigner from "../components/workflow/WorkspaceDesigner.vue";
+import WorkspaceApprovalCard from "../components/workflow/WorkspaceApprovalCard.vue";
 import WorkflowSidebar from "../components/workflow/WorkflowSidebar.vue";
 import WorkflowTemplatePicker from "../components/workflow/WorkflowTemplatePicker.vue";
+import { getLegacyWorkspace } from "../workspace/legacyWorkspaces";
+import WorkflowPanelRenderer from "../workspace/WorkflowPanelRenderer.vue";
+import type { WorkspaceDefinition } from "../workspace/registry";
 import {
-  stepCodeRoot,
-  stepPanelKind,
+  parsePendingWorkspaceApproval,
+  type PendingWorkspaceApproval,
+} from "../workspace/workspaceApproval";
+import {
   stepReportPath,
   useWorkflow,
   type StepStatus,
@@ -31,6 +34,7 @@ import {
 defineProps<{ workspace: string }>();
 
 const workflowApi = useWorkflow();
+const { fetchWorkspace, saveWorkspace } = useWorkspaceConfig();
 const {
   fetchWorkflowList,
   fetchTemplates,
@@ -59,6 +63,7 @@ const selectedWorkflowId = ref<string | null>(null);
 const activeWorkflowId = ref<string | null>(null);
 const showTemplatePicker = ref(false);
 const showConfigDrawer = ref(false);
+const showWorkspaceDesigner = ref(false);
 const configWorkflowId = ref<string | null>(null);
 const configDefinition = ref<WorkflowDefinition | null>(null);
 const templates = ref<TemplateSummary[]>([]);
@@ -92,6 +97,18 @@ const running = ref(false);
 const advancing = ref(false);
 const actionError = ref<string | null>(null);
 const chatMode = ref<"step" | "free">("step");
+
+const WORKSPACE_MUTATING_TOOLS = new Set([
+  "workspace_add_component",
+  "workspace_update_component",
+  "workspace_remove_component",
+  "workspace_reorder",
+  "workspace_set_layout",
+]);
+
+const fetchedWorkspace = ref<WorkspaceDefinition | null>(null);
+const workspaceResolved = ref(false);
+const pendingWorkspaceApproval = ref<PendingWorkspaceApproval | null>(null);
 
 const CHAT_PERCENT_KEY = "workflow-chat-percent";
 const CHAT_MIN_PERCENT = 20;
@@ -180,10 +197,16 @@ const currentStep = computed(() => {
   return workflow.value?.steps.find((s) => s.id === id) ?? null;
 });
 
-const currentPanel = computed(() => {
-  const id = activeStepId.value;
-  return id ? stepPanelKind(id) : "agent-run";
-});
+const resolvedWorkspace = computed(() => fetchedWorkspace.value);
+
+const panelRuntime = computed(() => ({
+  stepId: activeStepId.value ?? undefined,
+  stepTitle: currentStep.value?.title,
+  status: currentStepStatus.value,
+  reportPath: activeStepId.value ? stepReportPath(activeStepId.value) : null,
+  running: running.value && state.value?.currentStepId === activeStepId.value,
+  liveOutput: currentLiveOutput.value,
+}));
 
 const currentStepMessages = computed(() => {
   const id = activeStepId.value;
@@ -219,6 +242,26 @@ watch(
       viewingStepId.value = id;
     }
   },
+);
+
+watch(
+  () => [selectedWorkflowId.value, activeStepId.value] as const,
+  async ([workflowId, stepId]) => {
+    fetchedWorkspace.value = null;
+    workspaceResolved.value = false;
+    if (!workflowId || !stepId) {
+      workspaceResolved.value = true;
+      return;
+    }
+    try {
+      fetchedWorkspace.value = await fetchWorkspace(workflowId, stepId);
+    } catch {
+      fetchedWorkspace.value = getLegacyWorkspace(stepId) ?? null;
+    } finally {
+      workspaceResolved.value = true;
+    }
+  },
+  { immediate: true },
 );
 
 async function loadSelectedWorkflow() {
@@ -348,6 +391,21 @@ function selectStep(stepId: string) {
   viewingStepId.value = stepId;
 }
 
+function openWorkspaceDesigner() {
+  if (!selectedWorkflowId.value) return;
+  showWorkspaceDesigner.value = true;
+}
+
+async function onWorkspaceSaved(definition: WorkspaceDefinition) {
+  if (
+    selectedWorkflowId.value &&
+    activeStepId.value === definition.stepId
+  ) {
+    fetchedWorkspace.value = definition;
+  }
+  showWorkspaceDesigner.value = false;
+}
+
 function toggleSkill(name: string) {
   const idx = selectedSkills.value.indexOf(name);
   if (idx >= 0) {
@@ -377,6 +435,31 @@ function appendToolNote(stepId: string, event: ToolEvent, phase: "start" | "end"
       ? `\n\n> Tool **${event.name ?? "unknown"}** started…\n`
       : `\n> Tool **${event.name ?? "unknown"}** ${event.ok === false ? "failed" : "finished"}\n`;
   appendStepAssistant(stepId, label);
+}
+
+async function refreshWorkspaceForStep(workflowId: string, stepId: string) {
+  try {
+    fetchedWorkspace.value = await fetchWorkspace(workflowId, stepId);
+  } catch {
+    fetchedWorkspace.value = getLegacyWorkspace(stepId) ?? null;
+  }
+}
+
+async function onApproveWorkspaceChange() {
+  const pending = pendingWorkspaceApproval.value;
+  if (!pending) return;
+  actionError.value = null;
+  try {
+    await saveWorkspace(pending.workflowId, pending.stepId, pending.after);
+    pendingWorkspaceApproval.value = null;
+    await refreshWorkspaceForStep(pending.workflowId, pending.stepId);
+  } catch (err) {
+    actionError.value = err instanceof Error ? err.message : String(err);
+  }
+}
+
+function onCancelWorkspaceChange() {
+  pendingWorkspaceApproval.value = null;
 }
 
 async function onAdvance(action: "continue" | "skip" | "retry") {
@@ -422,6 +505,24 @@ async function onStepSend(text: string) {
         appendToolNote(stepId, event.event, "start");
       } else if (event.type === "tool_end") {
         appendToolNote(stepId, event.event, "end");
+        const toolName = event.event.name;
+        const output = event.event.output;
+        if (output) {
+          const pending = parsePendingWorkspaceApproval(output);
+          if (pending) {
+            pendingWorkspaceApproval.value = pending;
+          }
+        }
+        if (
+          toolName &&
+          WORKSPACE_MUTATING_TOOLS.has(toolName) &&
+          event.event.ok !== false &&
+          activeWorkflowId.value &&
+          event.event.output &&
+          !parsePendingWorkspaceApproval(event.event.output)
+        ) {
+          await refreshWorkspaceForStep(activeWorkflowId.value, stepId);
+        }
       }
     }
     state.value = await fetchState(activeWorkflowId.value);
@@ -518,6 +619,7 @@ async function onFreeSend(text: string) {
           :viewing-step-id="activeStepId"
           @select-workflow="onSelectWorkflow"
           @config-workflow="openConfigDrawer"
+          @design-workspace="openWorkspaceDesigner"
           @select-step="selectStep"
           @add-workflow="openTemplatePicker"
         />
@@ -527,33 +629,18 @@ async function onFreeSend(text: string) {
             class="flex flex-col min-w-0 min-h-0 overflow-hidden border-r border-gray-200"
             :style="{ width: mainPanelWidth }"
           >
-            <WorkflowMarkdownPanel
-              v-if="currentPanel === 'markdown-doc'"
+            <WorkflowPanelRenderer
+              v-if="workspaceResolved && resolvedWorkspace"
+              :workspace="resolvedWorkspace"
               :api="panelApi"
+              :runtime="panelRuntime"
             />
-            <WorkflowArchitecturePanel
-              v-else-if="currentPanel === 'architecture'"
-              :api="panelApi"
-            />
-            <WorkflowCodeExplorer
-              v-else-if="currentPanel === 'code-explorer' && activeStepId"
-              :api="panelApi"
-              :root="stepCodeRoot(activeStepId)"
-            />
-            <WorkflowAgentRunPanel
-              v-else-if="currentPanel === 'agent-run' && activeStepId && currentStep"
-              :api="panelApi"
-              :step-id="activeStepId"
-              :step-title="currentStep.title"
-              :status="currentStepStatus"
-              :report-path="stepReportPath(activeStepId)"
-              :running="running && state.currentStepId === activeStepId"
-              :live-output="currentLiveOutput"
-            />
-            <WorkflowCicdPanel
-              v-else-if="currentPanel === 'cicd-config'"
-              :api="panelApi"
-            />
+            <p
+              v-else-if="workspaceResolved"
+              class="flex flex-1 items-center justify-center text-sm text-gray-500"
+            >
+              No workspace configured for this step.
+            </p>
           </main>
 
           <div
@@ -624,6 +711,14 @@ async function onFreeSend(text: string) {
                   :key="`${activeStepId}-${i}`"
                   :msg="msg"
                 />
+                <WorkspaceApprovalCard
+                  v-if="pendingWorkspaceApproval"
+                  :summary="pendingWorkspaceApproval.summary"
+                  :before="pendingWorkspaceApproval.before"
+                  :after="pendingWorkspaceApproval.after"
+                  @approve="onApproveWorkspaceChange"
+                  @cancel="onCancelWorkspaceChange"
+                />
                 <div v-if="running" class="text-gray-400 text-xs">Running step…</div>
                 <div
                   v-else-if="!currentStepMessages.length"
@@ -666,6 +761,16 @@ async function onFreeSend(text: string) {
         @save="onConfigSave"
         @activate="onConfigActivate"
         @delete="onConfigDelete"
+      />
+
+      <WorkspaceDesigner
+        :show="showWorkspaceDesigner"
+        :workflow-id="selectedWorkflowId"
+        :steps="workflow.steps.map((s) => ({ id: s.id, title: s.title }))"
+        :initial-step-id="activeStepId"
+        :skills="allSkills"
+        @close="showWorkspaceDesigner = false"
+        @saved="onWorkspaceSaved"
       />
     </template>
   </div>

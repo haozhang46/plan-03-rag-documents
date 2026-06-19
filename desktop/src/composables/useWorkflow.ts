@@ -276,32 +276,6 @@ export function useWorkflow() {
   };
 }
 
-export type StepPanelKind =
-  | "markdown-doc"
-  | "architecture"
-  | "code-explorer"
-  | "agent-run"
-  | "cicd-config";
-
-const STEP_PANEL_MAP: Record<string, StepPanelKind> = {
-  prd: "markdown-doc",
-  architecture: "architecture",
-  "fe-dev": "code-explorer",
-  "be-dev": "code-explorer",
-  test: "agent-run",
-  review: "agent-run",
-  "test-2": "agent-run",
-  cicd: "cicd-config",
-};
-
-export function stepPanelKind(stepId: string): StepPanelKind {
-  return STEP_PANEL_MAP[stepId] ?? "agent-run";
-}
-
-export function stepCodeRoot(stepId: string): string {
-  return stepId === "fe-dev" ? "fe" : "backend";
-}
-
 export function stepReportPath(stepId: string): string | null {
   const map: Record<string, string> = {
     test: "test-report.md",

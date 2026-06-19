@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "stepId": "be-dev",
+  "layout": "stack",
+  "components": [
+    {
+      "id": "code",
+      "type": "code-explorer",
+      "label": "Backend",
+      "props": {
+        "root": "backend",
+        "writable": false
+      }
+    }
+  ]
+}

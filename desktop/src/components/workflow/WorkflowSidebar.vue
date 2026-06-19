@@ -18,6 +18,7 @@ defineProps<{
 const emit = defineEmits<{
   "select-workflow": [workflowId: string];
   "config-workflow": [workflowId: string];
+  "design-workspace": [];
   "select-step": [stepId: string];
   "add-workflow": [];
 }>();
@@ -85,8 +86,17 @@ const statusClass: Record<StepStatus, string> = {
       </div>
     </div>
 
-    <div class="p-3 border-b border-gray-200">
+    <div class="p-3 border-b border-gray-200 flex items-center justify-between gap-2">
       <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Pipeline Steps</p>
+      <button
+        type="button"
+        class="text-[10px] text-blue-600 hover:underline shrink-0"
+        title="Design workspace layout"
+        :disabled="!steps.length"
+        @click="emit('design-workspace')"
+      >
+        Design
+      </button>
     </div>
 
     <div class="flex-1 overflow-y-auto">

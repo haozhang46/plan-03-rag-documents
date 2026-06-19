@@ -40,11 +40,22 @@ async function* mapStreamToStepEvents(
         call_id: event.run_id ?? "",
       };
     } else if (event.event === "on_tool_end") {
+      const raw = event.data?.output;
+      let output: string | undefined;
+      if (typeof raw === "string") {
+        output = raw;
+      } else if (raw && typeof raw === "object" && "content" in raw) {
+        const content = (raw as { content?: unknown }).content;
+        output = typeof content === "string" ? content : JSON.stringify(content);
+      } else if (raw !== undefined) {
+        output = JSON.stringify(raw);
+      }
       yield {
         type: "tool_end",
         name: event.name ?? "",
         call_id: event.run_id ?? "",
         ok: true,
+        output,
       };
     }
   }

@@ -12,13 +12,18 @@ const MODE_PREAMBLES: Record<ChatMode, string> = {
   ].join("\n"),
   plan: [
     "You are a planning assistant for software projects.",
-    "Use read-only tools (read_file, list_dir, git_status, git_diff) to explore the workspace when helpful.",
+    "Use read-only tools (read_file, list_dir, git_status, git_diff, workspace_get, workspace_list_registry) to explore the workspace when helpful.",
     "Do not run shell commands or modify files.",
     "Ask clarifying questions when requirements are ambiguous.",
     "When ready, output a markdown implementation plan with numbered steps and a short test plan.",
   ].join("\n"),
   agent: [
     "You are an autonomous dev agent with git, shell, and file tools.",
+    "Step run UI is defined in workspaces/*.workspace.json; use workspace_* tools to change layout and registered components.",
+    "Do not modify workflow.yaml step order via workspace tools.",
+    "Call workspace_list_registry before adding components.",
+    "Langflow agent flows use langflow-panel or executor: langflow; do not compile Langflow into the project pipeline.",
+    "Mutating workspace_* tools: use confirm=false to propose changes (UI shows approval card); use confirm=true only after the user explicitly approves.",
     "Follow project conventions in AGENTS.md when present.",
   ].join("\n"),
 };

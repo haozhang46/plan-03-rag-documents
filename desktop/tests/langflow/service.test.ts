@@ -2,14 +2,12 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import yaml from "yaml";
 import { readLangflowState, writeLangflowState } from "../../electron/langflow/store";
 import {
   countStepNodes,
   mapLangflowExportToCompilerInput,
   setActiveWorkspaceFlow,
 } from "../../electron/langflow/service";
-import { WorkflowSchema } from "../../electron/workflow/types";
 
 vi.mock("../../electron/langflow/client", () => ({
   checkHealth: vi.fn(),
@@ -117,7 +115,7 @@ describe("setActiveWorkspaceFlow", () => {
     await fs.rm(tmp, { recursive: true, force: true });
   });
 
-  it("writes workflow.yaml and updates langflow.json when flow has step nodes", async () => {
+  it("writes flow export and updates langflow.json without overwriting workflow.yaml", async () => {
     mockedGetFlow.mockResolvedValue(FLOW_WITH_STEPS);
 
     const workflow = await setActiveWorkspaceFlow(tmp, "flow-abc");
@@ -128,11 +126,12 @@ describe("setActiveWorkspaceFlow", () => {
     expect(workflow.steps[0].id).toBe("prd");
     expect(workflow.edges).toEqual([{ from: "prd", to: "build" }]);
 
-    const yamlPath = path.join(tmp, ".agentflow/workflow.yaml");
-    const yamlContent = await fs.readFile(yamlPath, "utf8");
-    const parsed = WorkflowSchema.parse(yaml.parse(yamlContent));
-    expect(parsed.id).toBe("flow-abc");
-    expect(parsed.steps).toHaveLength(2);
+    const flowExportPath = path.join(tmp, ".agentflow/langflow/flows/flow-abc.json");
+    const flowExport = JSON.parse(await fs.readFile(flowExportPath, "utf8"));
+    expect(flowExport.id).toBe("flow-abc");
+    expect(flowExport.name).toBe("My Pipeline");
+
+    await expect(fs.access(path.join(tmp, ".agentflow/workflow.yaml"))).rejects.toThrow();
 
     const state = await readLangflowState(tmp);
     expect(state.activeFlowId).toBe("flow-abc");

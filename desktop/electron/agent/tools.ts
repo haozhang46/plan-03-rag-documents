@@ -1,8 +1,42 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { runDesktopTool, type DesktopToolContext } from "../executor/runTool";
+import {
+  buildReadOnlyWorkspaceTools,
+  buildWorkspaceLangChainTools,
+  type WorkspaceToolContext,
+} from "./workspaceTools";
 
-export function buildDesktopLangChainTools(ctx: DesktopToolContext) {
+export type AgentToolContext = DesktopToolContext & {
+  workflowId?: string | null;
+  stepId?: string | null;
+};
+
+function toWorkspaceContext(ctx: AgentToolContext): WorkspaceToolContext {
+  return {
+    workspaceRoot: ctx.workspaceRoot,
+    workflowId: ctx.workflowId,
+    stepId: ctx.stepId,
+  };
+}
+
+export function buildDesktopLangChainTools(ctx: AgentToolContext) {
+  return [
+    ...buildBaseDesktopTools(ctx),
+    ...buildWorkspaceLangChainTools(toWorkspaceContext(ctx)),
+  ];
+}
+
+export function buildReadOnlyDesktopTools(ctx: AgentToolContext) {
+  return [
+    ...buildBaseDesktopTools(ctx).filter((t) =>
+      ["read_file", "list_dir", "git_status", "git_diff"].includes(t.name),
+    ),
+    ...buildReadOnlyWorkspaceTools(toWorkspaceContext(ctx)),
+  ];
+}
+
+function buildBaseDesktopTools(ctx: DesktopToolContext) {
   return [
     tool(
       async ({ path }) => runDesktopTool(ctx, "read_file", { path }),
@@ -45,10 +79,4 @@ export function buildDesktopLangChainTools(ctx: DesktopToolContext) {
       },
     ),
   ];
-}
-
-export function buildReadOnlyDesktopTools(ctx: DesktopToolContext) {
-  return buildDesktopLangChainTools(ctx).filter((t) =>
-    ["read_file", "list_dir", "git_status", "git_diff"].includes(t.name),
-  );
 }

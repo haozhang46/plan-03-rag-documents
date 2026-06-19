@@ -14,4 +14,5 @@ export interface ToolEvent {
   call_id?: string;
   name?: string;
   ok?: boolean;
+  output?: string;
 }

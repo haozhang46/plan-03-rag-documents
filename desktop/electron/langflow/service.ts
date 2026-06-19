@@ -1,5 +1,6 @@
+import fs from "node:fs/promises";
 import path from "node:path";
-import { compileAndWriteWorkflow, type LangflowJson } from "../workflow/compiler";
+import { compileLangflowJson, type LangflowJson } from "../workflow/compiler";
 import type { WorkflowDefinition } from "../workflow/types";
 import {
   checkHealth,
@@ -46,6 +47,17 @@ export function mapLangflowExportToCompilerInput(flow: LangflowFlowExport): Lang
 
 export function countStepNodes(langflowJson: LangflowJson): number {
   return (langflowJson.nodes ?? []).filter((node) => node.data?.metadata?.id).length;
+}
+
+export async function saveFlowExport(
+  projectRoot: string,
+  flow: LangflowFlowExport,
+): Promise<string> {
+  const flowsDir = path.join(projectRoot, ".agentflow/langflow/flows");
+  await fs.mkdir(flowsDir, { recursive: true });
+  const dest = path.join(flowsDir, `${flow.id}.json`);
+  await fs.writeFile(dest, JSON.stringify(flow, null, 2), "utf8");
+  return dest;
 }
 
 export async function getLangflowStatus(): Promise<LangflowStatus> {
@@ -113,7 +125,9 @@ export async function setActiveWorkspaceFlow(
     );
   }
 
-  const workflow = await compileAndWriteWorkflow(projectRoot, langflowJson);
+  await saveFlowExport(projectRoot, flow);
+
+  const workflow = compileLangflowJson(langflowJson);
   const state = await readLangflowState(projectRoot);
   await writeLangflowState(projectRoot, {
     ...state,

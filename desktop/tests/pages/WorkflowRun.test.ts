@@ -1,11 +1,13 @@
 // @vitest-environment happy-dom
-import { mount } from "@vue/test-utils";
+import { mount, flushPromises } from "@vue/test-utils";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import WorkflowRun from "../../src/pages/WorkflowRun.vue";
 import type { DesktopApi } from "../../electron/preload";
 
-function flushPromises(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 0));
+async function settle(): Promise<void> {
+  for (let i = 0; i < 10; i++) {
+    await flushPromises();
+  }
 }
 
 const mockWorkflow = {
@@ -88,7 +90,12 @@ describe("WorkflowRun", () => {
       "fetch",
       vi.fn(async (input: string | URL) => {
         const url = String(input);
-        if (url.includes("/v1/workflows") && !url.includes("/current") && !url.includes("/templates")) {
+        if (
+          url.includes("/v1/workflows") &&
+          !url.includes("/current") &&
+          !url.includes("/templates") &&
+          !url.includes("/workspaces/")
+        ) {
           return new Response(
             JSON.stringify({
               workflows: [{ id: "default-dev-cicd", title: "Dev to CI/CD Pipeline", isLegacy: true, isActive: true }],
@@ -115,10 +122,14 @@ describe("WorkflowRun", () => {
           );
         }
         if (url.includes("/v1/workspace/file")) {
-          return new Response(
-            JSON.stringify({ path: "docs/PRD.md", content: "# PRD\n\nSample" }),
-            { status: 200 },
-          );
+          const path = url.includes("architecture")
+            ? "docs/architecture.md"
+            : "docs/PRD.md";
+          const content = url.includes("architecture") ? "# Architecture\n" : "# PRD\n\nSample";
+          return new Response(JSON.stringify({ path, content }), { status: 200 });
+        }
+        if (url.match(/\/v1\/workflows\/[^/]+\/workspaces\/[^/]+$/)) {
+          return new Response("not found", { status: 404 });
         }
         return new Response("not found", { status: 404 });
       }),
@@ -129,8 +140,10 @@ describe("WorkflowRun", () => {
     const wrapper = mount(WorkflowRun, {
       props: { workspace: "/tmp/project" },
     });
-    await flushPromises();
-    await flushPromises();
+    await vi.waitFor(async () => {
+      await flushPromises();
+      expect(wrapper.text()).toContain("Documents");
+    });
 
     expect(wrapper.text()).toContain("Dev to CI/CD Pipeline");
     expect(wrapper.text()).toContain("PRD");
@@ -138,37 +151,86 @@ describe("WorkflowRun", () => {
     expect(wrapper.text()).toContain("Pending");
     expect(wrapper.text()).toContain("Continue");
     expect(wrapper.text()).toContain("Step Chat");
-    expect(wrapper.text()).toContain("Documents");
   });
 
   it("shows architecture panel when architecture step selected", async () => {
     const wrapper = mount(WorkflowRun, {
       props: { workspace: "/tmp/project" },
     });
-    await flushPromises();
-    await flushPromises();
+    await settle();
 
     const archBtn = wrapper
       .findAll("button")
       .find((b) => b.text().includes("Architecture") && b.text().includes("Pending"));
     expect(archBtn).toBeDefined();
     await archBtn!.trigger("click");
-    await flushPromises();
-
-    expect(wrapper.text()).toContain("docs/architecture.md");
+    await vi.waitFor(async () => {
+      await flushPromises();
+      expect(wrapper.text()).toContain("docs/architecture.md");
+    });
   });
 
   it("switches to Free Chat tab", async () => {
     const wrapper = mount(WorkflowRun, {
       props: { workspace: "/tmp/project" },
     });
-    await flushPromises();
-    await flushPromises();
+    await settle();
 
     const freeTab = wrapper.findAll("button").find((b) => b.text() === "Free Chat");
     expect(freeTab).toBeDefined();
     await freeTab!.trigger("click");
 
     expect(wrapper.text()).toContain("Free Chat");
+  });
+
+  it("renders workspace from API when available", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        if (url.includes("/v1/workflows") && !url.includes("/current") && !url.includes("/templates") && !url.includes("/workspaces/")) {
+          return new Response(
+            JSON.stringify({
+              workflows: [{ id: "default-dev-cicd", title: "Dev to CI/CD Pipeline", isLegacy: true, isActive: true }],
+              activeWorkflowId: "default-dev-cicd",
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.includes("/v1/workflows/current")) {
+          return new Response(JSON.stringify(mockWorkflow), { status: 200 });
+        }
+        if (url.includes("/v1/workflow/state")) {
+          return new Response(JSON.stringify(mockState), { status: 200 });
+        }
+        if (url.includes("/v1/skills")) {
+          return new Response(JSON.stringify(["brainstorming"]), { status: 200 });
+        }
+        if (url.includes("/v1/workflows/default-dev-cicd/workspaces/prd")) {
+          return new Response(
+            JSON.stringify({
+              version: 1,
+              stepId: "prd",
+              layout: "stack",
+              components: [
+                { id: "doc", type: "markdown-doc", props: { docsDir: "docs-custom" } },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.includes("/v1/workspace/list")) {
+          return new Response(JSON.stringify({ path: "docs-custom", entries: [] }), { status: 200 });
+        }
+        return new Response("not found", { status: 404 });
+      }),
+    );
+
+    const wrapper = mount(WorkflowRun, {
+      props: { workspace: "/tmp/project" },
+    });
+    await settle();
+
+    expect(wrapper.text()).toContain("Documents");
   });
 });

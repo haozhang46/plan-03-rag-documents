@@ -103,7 +103,7 @@ async function onSetActive() {
     activeFlowId.value = selectedId.value;
     message.value = {
       type: "success",
-      text: "Active workflow saved to .agentflow/workflow.yaml",
+      text: `Agent flow saved to .agentflow/langflow/flows/${selectedId.value}.json`,
     };
   } catch (err) {
     const text = err instanceof Error ? err.message : String(err);
@@ -126,7 +126,7 @@ function openInBrowser() {
       v-if="!workspace"
       class="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center"
     >
-      <p class="text-sm text-gray-600">Open a project to edit Langflow workflows.</p>
+      <p class="text-sm text-gray-600">Open a project to design Langflow agent flows.</p>
       <p class="text-xs text-gray-500">Use Home to create or open a project folder.</p>
     </div>
 
@@ -135,6 +135,7 @@ function openInBrowser() {
         class="flex flex-wrap items-center gap-2 border-b border-gray-200 bg-white px-4 py-2"
       >
         <h1 class="text-sm font-semibold text-gray-800">Langflow Editor</h1>
+        <span class="text-xs text-gray-500">Agent orchestration — not project pipeline authoring</span>
         <span v-if="status?.baseUrl" class="text-xs text-gray-400 truncate max-w-xs">
           {{ status.baseUrl }}
         </span>
@@ -153,7 +154,7 @@ function openInBrowser() {
             :disabled="!selectedId || acting || offline"
             @click="onSetActive"
           >
-            {{ acting ? "Saving…" : "Set as Active Workflow" }}
+            {{ acting ? "Saving…" : "Save Active Flow" }}
           </button>
         </div>
       </header>

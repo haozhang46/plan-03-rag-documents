@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "stepId": "fe-dev",
+  "layout": "tabs",
+  "components": [
+    {
+      "id": "arch",
+      "type": "fe-architecture-plan",
+      "label": "分层架构",
+      "props": {
+        "output": "docs/fe-architecture.md",
+        "layers": ["pages", "components", "composables", "stores", "api"]
+      }
+    },
+    {
+      "id": "split",
+      "type": "component-splitter",
+      "label": "组件拆分",
+      "props": {
+        "output": "docs/fe-components.md",
+        "skills": ["frontend-design"],
+        "editable": true
+      }
+    },
+    {
+      "id": "style",
+      "type": "style-tokens-editor",
+      "label": "基础样式",
+      "props": {
+        "preset": "unocss",
+        "target": "fe/uno.config.ts",
+        "themeFile": "fe/app/assets/theme.json"
+      }
+    },
+    {
+      "id": "code",
+      "type": "code-explorer",
+      "label": "代码",
+      "props": {
+        "root": "fe",
+        "writable": false
+      }
+    }
+  ]
+}

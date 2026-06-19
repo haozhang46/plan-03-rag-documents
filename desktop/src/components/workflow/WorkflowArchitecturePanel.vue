@@ -1,18 +1,24 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import MarkdownPreview from "./MarkdownPreview.vue";
 import type { useWorkflow } from "../../composables/useWorkflow";
 
 type WorkflowApi = Pick<ReturnType<typeof useWorkflow>, "readWorkspaceFile">;
 
-const props = defineProps<{ api: WorkflowApi }>();
+type ArchFile = { path: string; label: string };
 
-const ARCH_FILES = [
+const DEFAULT_ARCH_FILES: ArchFile[] = [
   { path: "docs/architecture.md", label: "Architecture" },
   { path: "AGENTS.md", label: "AGENTS.md" },
 ];
 
-const selectedPath = ref(ARCH_FILES[0].path);
+const props = defineProps<{ api: WorkflowApi; files?: ArchFile[] }>();
+
+const archFiles = computed(() =>
+  props.files?.length ? props.files : DEFAULT_ARCH_FILES,
+);
+
+const selectedPath = ref(archFiles.value[0].path);
 const content = ref("");
 const loading = ref(false);
 const error = ref<string | null>(null);
@@ -31,12 +37,22 @@ async function loadFile(path: string) {
   }
 }
 
+watch(
+  archFiles,
+  (files) => {
+    if (!files.some((f) => f.path === selectedPath.value)) {
+      selectedPath.value = files[0]?.path ?? "";
+    }
+  },
+  { immediate: true },
+);
+
 onMounted(() => {
-  void loadFile(selectedPath.value);
+  if (selectedPath.value) void loadFile(selectedPath.value);
 });
 
 watch(selectedPath, (path) => {
-  void loadFile(path);
+  if (path) void loadFile(path);
 });
 </script>
 
@@ -47,7 +63,7 @@ watch(selectedPath, (path) => {
         <span class="text-xs font-medium text-gray-500">Architecture</span>
       </div>
       <button
-        v-for="file in ARCH_FILES"
+        v-for="file in archFiles"
         :key="file.path"
         class="w-full text-left px-3 py-2 text-xs border-b border-gray-100 hover:bg-gray-100"
         :class="selectedPath === file.path ? 'bg-blue-50 text-blue-700' : 'text-gray-700'"
