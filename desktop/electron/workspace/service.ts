@@ -9,6 +9,7 @@ import {
   resolveWorkspacePath,
   writeFileTool,
 } from "../executor/tools";
+import { projectIdFromRoot } from "../resources/topology";
 import { readGateResults, readPhaseOutput } from "../workflow/phases";
 import { getResourceContext } from "../workflow/workflowService";
 
@@ -122,6 +123,30 @@ function countK8sReplicas(files: { path: string; content: string }[]): number | 
   return found ? total : undefined;
 }
 
+interface ServerDeploymentSummary {
+  platform?: "docker-compose" | "kubernetes" | "unknown";
+  services?: { name: string; image?: string; ports?: string[] }[];
+  nodeCount?: number;
+}
+
+async function fetchServerDeploymentSummary(
+  serverUrl: string,
+  projectId: string,
+): Promise<ServerDeploymentSummary | null> {
+  try {
+    const base = serverUrl.replace(/\/$/, "");
+    const res = await fetch(
+      `${base}/v1/deployment/summary?project=${encodeURIComponent(projectId)}`,
+    );
+    if (!res.ok) {
+      return null;
+    }
+    return (await res.json()) as ServerDeploymentSummary;
+  } catch {
+    return null;
+  }
+}
+
 export async function workspaceDeploymentConfig(
   workspaceRoot: string,
   getResourceServerUrl?: () => string | null,
@@ -189,16 +214,37 @@ export async function workspaceDeploymentConfig(
       port: r.instance?.port,
     }));
 
+  const serverUrl = getResourceServerUrl?.() ?? undefined;
+  const serverSummary =
+    serverUrl != null && serverUrl !== ""
+      ? await fetchServerDeploymentSummary(serverUrl, projectIdFromRoot(workspaceRoot))
+      : null;
+
+  const resolvedPlatform =
+    serverSummary?.platform && serverSummary.platform !== "unknown"
+      ? serverSummary.platform
+      : platform;
+  const resolvedServices =
+    serverSummary?.services?.length && services.length === 0
+      ? serverSummary.services.map((svc) => ({
+          name: svc.name,
+          image: svc.image,
+          ports: svc.ports,
+        }))
+      : services;
+  const resolvedNodeCount =
+    serverSummary?.nodeCount ??
+    (resolvedPlatform === "kubernetes"
+      ? countK8sReplicas(k8sFiles)
+      : resolvedPlatform === "docker-compose"
+        ? resolvedServices.length || undefined
+        : undefined);
+
   return {
-    platform,
-    nodeCount:
-      platform === "kubernetes"
-        ? countK8sReplicas(k8sFiles)
-        : platform === "docker-compose"
-          ? services.length || undefined
-          : undefined,
+    platform: resolvedPlatform,
+    nodeCount: resolvedNodeCount,
     hasNginx,
-    services,
+    services: resolvedServices,
     databases,
     caches,
     composeFile,

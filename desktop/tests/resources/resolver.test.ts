@@ -64,7 +64,9 @@ describe("resolveResources", () => {
 
     const resolved = await resolveResources(tmp, "http://resource-server:9000");
 
-    expect(fetch).toHaveBeenCalledWith("http://resource-server:9000/v1/resources/config");
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("http://resource-server:9000/v1/resources/config?project="),
+    );
     expect(resolved).toEqual([
       {
         type: "mysql",

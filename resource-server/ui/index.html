@@ -60,6 +60,12 @@
     let topology = { version: 1, project: "demo", nodes: [], edges: [], targets: [] };
 
     function projectId() {
+      const params = new URLSearchParams(window.location.search);
+      const fromQuery = params.get("project");
+      if (fromQuery) {
+        document.getElementById("project").value = fromQuery;
+        return fromQuery;
+      }
       return document.getElementById("project").value.trim() || "demo";
     }
 

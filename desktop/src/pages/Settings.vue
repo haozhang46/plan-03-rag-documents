@@ -6,6 +6,7 @@ const emit = defineEmits<{ back: [] }>();
 const apiKeyStatus = ref("");
 const apiKeyInput = ref("");
 const resourceServerUrl = ref("");
+const workspacePath = ref("");
 const langflowBaseUrl = ref("");
 const langflowApiKeyStatus = ref("");
 const langflowApiKeyInput = ref("");
@@ -14,6 +15,7 @@ const langflowAutoStart = ref(true);
 onMounted(async () => {
   apiKeyStatus.value = await window.desktop.getApiKeyStatus();
   resourceServerUrl.value = await window.desktop.getResourceServerUrl();
+  workspacePath.value = await window.desktop.getWorkspace();
   langflowBaseUrl.value = await window.desktop.getLangflowBaseUrl();
   langflowApiKeyStatus.value = await window.desktop.getLangflowApiKeyStatus();
   langflowAutoStart.value = await window.desktop.getLangflowAutoStart();
@@ -36,7 +38,9 @@ async function saveResourceServerUrl() {
 
 const topologyPanelUrl = computed(() => {
   const base = resourceServerUrl.value.trim().replace(/\/$/, "");
-  return base ? `${base}/ui/` : "";
+  if (!base) return "";
+  const project = workspacePath.value.split(/[/\\]/).filter(Boolean).pop() ?? "demo";
+  return `${base}/ui/?project=${encodeURIComponent(project)}`;
 });
 
 async function saveLangflow() {

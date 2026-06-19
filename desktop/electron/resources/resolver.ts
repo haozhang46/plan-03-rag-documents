@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import yaml from "yaml";
+import { projectIdFromRoot } from "./topology";
 import { loadWorkflow } from "../workflow/loader";
 
 export interface ResourceInstance {
@@ -43,10 +44,12 @@ async function loadDeclarations(projectRoot: string): Promise<ResourceDeclaratio
 
 export async function fetchServerConfig(
   serverUrl: string,
+  projectId?: string,
 ): Promise<Record<string, ResourceInstance>> {
   try {
     const base = serverUrl.replace(/\/$/, "");
-    const res = await fetch(`${base}/v1/resources/config`);
+    const query = projectId ? `?project=${encodeURIComponent(projectId)}` : "";
+    const res = await fetch(`${base}/v1/resources/config${query}`);
     if (!res.ok) {
       return {};
     }
@@ -75,8 +78,9 @@ export async function resolveResources(
   resourceServerUrl?: string,
 ): Promise<ResolvedResource[]> {
   const declarations = await loadDeclarations(projectRoot);
+  const projectId = projectIdFromRoot(projectRoot);
   const serverInstances = resourceServerUrl
-    ? await fetchServerConfig(resourceServerUrl)
+    ? await fetchServerConfig(resourceServerUrl, projectId)
     : {};
   const localInstances = await loadLocalInstances(projectRoot);
   const mergedInstances = { ...serverInstances, ...localInstances };
