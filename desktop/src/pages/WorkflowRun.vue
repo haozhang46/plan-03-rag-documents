@@ -3,12 +3,17 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import {
   ChatInput,
   ChatMessage,
-  useMessages,
-  type ChatMessage as ChatMsg,
+  type ChatAttachment,
   type ToolEvent,
+  type SseEvent,
 } from "@agent-flow/shared-ui";
 import { useLocalChat } from "../composables/useLocalChat";
+import { useChatMemory } from "../composables/useChatMemory";
+import ChatThreadSidebar from "../components/chat/ChatThreadSidebar.vue";
 import { useWorkspaceConfig } from "../composables/useWorkspaceConfig";
+import { expandChatMessage } from "../utils/expandChatMessage";
+import { normalizeWorkspacePath } from "../utils/normalizeWorkspacePath";
+import { parseWriteFilePath } from "../utils/parseWriteFilePath";
 import WorkflowConfigDrawer from "../components/workflow/WorkflowConfigDrawer.vue";
 import WorkspaceDesigner from "../components/workflow/WorkspaceDesigner.vue";
 import WorkspaceApprovalCard from "../components/workflow/WorkspaceApprovalCard.vue";
@@ -16,11 +21,10 @@ import WorkflowSidebar from "../components/workflow/WorkflowSidebar.vue";
 import WorkflowTemplatePicker from "../components/workflow/WorkflowTemplatePicker.vue";
 import { getLegacyWorkspace } from "../workspace/legacyWorkspaces";
 import WorkflowPanelRenderer from "../workspace/WorkflowPanelRenderer.vue";
+import type { ChatFileAttachment, RuleFileEntry } from "../workspace/registryComponents";
 import type { WorkspaceDefinition } from "../workspace/registry";
-import {
-  parsePendingWorkspaceApproval,
-  type PendingWorkspaceApproval,
-} from "../workspace/workspaceApproval";
+import { useWorkspaceApproval } from "../composables/useWorkspaceApproval";
+import { parsePendingWorkspaceApproval } from "../workspace/workspaceApproval";
 import {
   stepReportPath,
   useWorkflow,
@@ -43,10 +47,13 @@ const {
   fetchSkills,
   saveWorkflow,
   createFromTemplate,
+  initWorkflow,
   activateWorkflow,
   deleteWorkflow,
   advance,
   runStep,
+  fileChat,
+  stepChat,
   fetchPhase,
   fetchGates,
   fetchDeploymentConfig,
@@ -71,6 +78,52 @@ const templates = ref<TemplateSummary[]>([]);
 const templatesLoading = ref(false);
 const configSaving = ref(false);
 
+const chatMode = ref<"step" | "free">("step");
+const stepChatFileMode = ref(false);
+const stepChatInputRef = ref<{ addAttachment: (a: ChatAttachment) => void } | null>(null);
+const freeChatInputRef = ref<{ addAttachment: (a: ChatAttachment) => void } | null>(null);
+
+function addFileToChat(item: ChatFileAttachment) {
+  stepChatFileMode.value = true;
+  const inputRef = chatMode.value === "step" ? stepChatInputRef : freeChatInputRef;
+  inputRef.value?.addAttachment({
+    path: item.path,
+    label: item.label ?? item.path.split("/").pop() ?? item.path,
+  });
+}
+
+async function persistRuleFiles(files: RuleFileEntry[], componentId: string) {
+  const workflowId = activeWorkflowId.value;
+  const stepId = activeStepId.value;
+  const workspace = fetchedWorkspace.value;
+  if (!workflowId || !stepId || !workspace) {
+    throw new Error("Workspace not loaded");
+  }
+
+  const updated: WorkspaceDefinition = {
+    ...workspace,
+    components: workspace.components.map((comp) =>
+      comp.id === componentId && comp.type === "agent-rules-editor"
+        ? { ...comp, props: { ...comp.props, files } }
+        : comp,
+    ),
+  };
+  fetchedWorkspace.value = await saveWorkspace(workflowId, stepId, updated);
+}
+
+const fileWriteListeners = new Set<(path: string) => void>();
+
+function notifyFileWritten(path: string) {
+  const normalized = normalizeWorkspacePath(path);
+  for (const fn of fileWriteListeners) fn(normalized);
+}
+
+function handleWriteFileToolEnd(event: ToolEvent) {
+  if (event.name !== "write_file" || event.ok === false) return;
+  const path = parseWriteFilePath(event.output);
+  if (path) notifyFileWritten(path);
+}
+
 const panelApi = {
   fetchPhase,
   fetchGates,
@@ -82,23 +135,28 @@ const panelApi = {
   readWorkspaceFile,
   writeWorkspaceFile,
   deleteWorkspacePath,
+  addToChat: addFileToChat,
+  persistRuleFiles,
+  subscribeFileWrites: (fn) => {
+    fileWriteListeners.add(fn);
+    return () => fileWriteListeners.delete(fn);
+  },
 };
 
-const { streamChat } = useLocalChat();
+const { streamChatEvents } = useLocalChat();
 
 const loading = ref(true);
+const initLoading = ref(false);
 const error = ref<string | null>(null);
 const workflow = ref<WorkflowDefinition | null>(null);
 const state = ref<WorkflowRunState | null>(null);
 const allSkills = ref<string[]>([]);
 const selectedSkills = ref<string[]>([]);
 const viewingStepId = ref<string | null>(null);
-const stepMessages = ref<Record<string, ChatMsg[]>>({});
 const liveOutput = ref<Record<string, string>>({});
 const running = ref(false);
 const advancing = ref(false);
 const actionError = ref<string | null>(null);
-const chatMode = ref<"step" | "free">("step");
 
 const WORKSPACE_MUTATING_TOOLS = new Set([
   "workspace_add_component",
@@ -110,13 +168,27 @@ const WORKSPACE_MUTATING_TOOLS = new Set([
 
 const fetchedWorkspace = ref<WorkspaceDefinition | null>(null);
 const workspaceResolved = ref(false);
-const pendingWorkspaceApproval = ref<PendingWorkspaceApproval | null>(null);
+
+const {
+  pending: pendingWorkspaceApproval,
+  approvalError: workspaceApprovalError,
+  approving: workspaceApproving,
+  handleToolEndOutput,
+  approvePending: onApproveWorkspaceChange,
+  cancelPending: onCancelWorkspaceChange,
+} = useWorkspaceApproval(async (workflowId, stepId) => {
+  if (activeWorkflowId.value === workflowId) {
+    await refreshWorkspaceForStep(workflowId, stepId);
+  }
+});
 
 const CHAT_PERCENT_KEY = "workflow-chat-percent";
+const CHAT_LIST_COLLAPSED_KEY = "workflow-chat-list-collapsed";
 const CHAT_MIN_PERCENT = 20;
 const CHAT_MAX_PERCENT = 70;
 const resizeContainer = ref<HTMLElement | null>(null);
 const chatPercent = ref(30);
+const chatListCollapsed = ref(false);
 const isResizing = ref(false);
 
 const mainPanelWidth = computed(() => `calc(${100 - chatPercent.value}% - 4px)`);
@@ -133,6 +205,14 @@ function loadChatPercent() {
 
 function saveChatPercent() {
   localStorage.setItem(CHAT_PERCENT_KEY, String(chatPercent.value));
+}
+
+function loadChatListCollapsed() {
+  chatListCollapsed.value = localStorage.getItem(CHAT_LIST_COLLAPSED_KEY) === "true";
+}
+
+function saveChatListCollapsed() {
+  localStorage.setItem(CHAT_LIST_COLLAPSED_KEY, String(chatListCollapsed.value));
 }
 
 function onResizeMove(e: MouseEvent) {
@@ -161,13 +241,62 @@ function startResize() {
   document.addEventListener("mouseup", stopResize);
 }
 
-const freeThreadId = ref<string>(crypto.randomUUID());
-const {
-  messages: freeMessages,
-  loading: freeLoading,
-  addUserMessage: addFreeUserMessage,
-  addAssistantChunk: addFreeAssistantChunk,
-} = useMessages(freeThreadId);
+const activeStepId = computed(() => viewingStepId.value ?? state.value?.currentStepId ?? null);
+
+const stepChatMemory = useChatMemory({
+  kind: "step",
+  workflowId: activeWorkflowId,
+  stepId: activeStepId,
+});
+
+const freeChatMemory = useChatMemory({
+  kind: "free",
+  workflowId: activeWorkflowId,
+});
+
+const freeSending = ref(false);
+
+const activeChatMemory = computed(() =>
+  chatMode.value === "step" ? stepChatMemory : freeChatMemory,
+);
+
+const activeChatThreads = computed(() => activeChatMemory.value.threads.value);
+const activeChatThreadId = computed(() => activeChatMemory.value.activeThreadId.value);
+
+async function ensureActiveChatThread() {
+  const memory = activeChatMemory.value;
+  if (memory.loading.value) return;
+  if (memory.activeThreadId.value) return;
+  if (memory.threads.value.length > 0) {
+    await memory.selectThread(memory.threads.value[0]!.id);
+    return;
+  }
+  const query =
+    chatMode.value === "step"
+      ? activeWorkflowId.value && activeStepId.value
+      : activeWorkflowId.value;
+  if (!query) return;
+  try {
+    await memory.createThread("New Chat");
+  } catch {
+    // scope not ready
+  }
+}
+
+function onSelectChatThread(id: string) {
+  void activeChatMemory.value.selectThread(id);
+}
+
+function onCreateChatThread() {
+  void activeChatMemory.value.createThread("New Chat");
+}
+
+function activeThreadCheckpointId(): string | null {
+  const memory = activeChatMemory.value;
+  const id = memory.activeThreadId.value;
+  if (!id) return null;
+  return memory.threads.value.find((t) => t.id === id)?.checkpointThreadId ?? null;
+}
 
 const canOperateActive = computed(
   () =>
@@ -194,6 +323,23 @@ const activeWorkflowTitle = computed(() => {
   return active?.title ?? workflow.value?.title ?? "Workflow";
 });
 
+const needsWorkflowInit = computed(
+  () => !loading.value && !error.value && workflows.value.length === 0,
+);
+
+function isWorkflowSetupError(message: string): boolean {
+  return (
+    message.includes("Workflow not found") ||
+    message.includes("No workflows configured") ||
+    message.includes("/v1/workflow/state") ||
+    message.includes("/v1/workflows/current")
+  );
+}
+
+const showInitWorkflowAction = computed(
+  () => needsWorkflowInit.value || (error.value != null && isWorkflowSetupError(error.value)),
+);
+
 const currentStep = computed(() => {
   const id = activeStepId.value;
   return workflow.value?.steps.find((s) => s.id === id) ?? null;
@@ -210,11 +356,8 @@ const panelRuntime = computed(() => ({
   liveOutput: currentLiveOutput.value,
 }));
 
-const currentStepMessages = computed(() => {
-  const id = activeStepId.value;
-  if (!id) return [];
-  return stepMessages.value[id] ?? [];
-});
+const currentStepMessages = computed(() => stepChatMemory.messages.value);
+const freeChatMessages = computed(() => freeChatMemory.messages.value);
 
 const currentLiveOutput = computed(() => {
   const id = activeStepId.value;
@@ -228,12 +371,27 @@ const currentStepStatus = computed((): StepStatus => {
   return state.value.stepStatuses[id] ?? "pending";
 });
 
-const activeStepId = computed(() => viewingStepId.value ?? state.value?.currentStepId ?? null);
-
 onMounted(() => {
   loadChatPercent();
+  loadChatListCollapsed();
   void loadData();
 });
+
+watch(chatListCollapsed, saveChatListCollapsed);
+
+watch(
+  () => [chatMode.value, stepChatMemory.threads.value.length, freeChatMemory.threads.value.length] as const,
+  () => {
+    void ensureActiveChatThread();
+  },
+);
+
+watch(
+  () => stepChatMemory.loading.value || freeChatMemory.loading.value,
+  (loading) => {
+    if (!loading) void ensureActiveChatThread();
+  },
+);
 
 onUnmounted(stopResize);
 
@@ -284,13 +442,32 @@ async function loadData() {
     const [list, skills] = await Promise.all([fetchWorkflowList(), fetchSkills()]);
     workflows.value = list.workflows;
     activeWorkflowId.value = list.activeWorkflowId;
-    selectedWorkflowId.value = list.activeWorkflowId;
     allSkills.value = skills;
+    if (list.workflows.length === 0) {
+      workflow.value = null;
+      state.value = null;
+      selectedWorkflowId.value = null;
+      return;
+    }
+    selectedWorkflowId.value = list.activeWorkflowId ?? list.workflows[0].id;
     await loadSelectedWorkflow();
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
   } finally {
     loading.value = false;
+  }
+}
+
+async function initWorkflowConfig() {
+  initLoading.value = true;
+  error.value = null;
+  try {
+    await initWorkflow("default-dev-cicd");
+    await loadData();
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    initLoading.value = false;
   }
 }
 
@@ -417,51 +594,12 @@ function toggleSkill(name: string) {
   }
 }
 
-function appendStepAssistant(stepId: string, content: string) {
-  if (!stepMessages.value[stepId]) {
-    stepMessages.value[stepId] = [];
-  }
-  const msgs = stepMessages.value[stepId];
-  const last = msgs[msgs.length - 1];
-  if (last?.role === "assistant") {
-    last.content += content;
-  } else {
-    msgs.push({ role: "assistant", content });
-  }
-  liveOutput.value[stepId] = (liveOutput.value[stepId] ?? "") + content;
-}
-
-function appendToolNote(stepId: string, event: ToolEvent, phase: "start" | "end") {
-  const label =
-    phase === "start"
-      ? `\n\n> Tool **${event.name ?? "unknown"}** started…\n`
-      : `\n> Tool **${event.name ?? "unknown"}** ${event.ok === false ? "failed" : "finished"}\n`;
-  appendStepAssistant(stepId, label);
-}
-
 async function refreshWorkspaceForStep(workflowId: string, stepId: string) {
   try {
     fetchedWorkspace.value = await fetchWorkspace(workflowId, stepId);
   } catch {
     fetchedWorkspace.value = getLegacyWorkspace(stepId) ?? null;
   }
-}
-
-async function onApproveWorkspaceChange() {
-  const pending = pendingWorkspaceApproval.value;
-  if (!pending) return;
-  actionError.value = null;
-  try {
-    await saveWorkspace(pending.workflowId, pending.stepId, pending.after);
-    pendingWorkspaceApproval.value = null;
-    await refreshWorkspaceForStep(pending.workflowId, pending.stepId);
-  } catch (err) {
-    actionError.value = err instanceof Error ? err.message : String(err);
-  }
-}
-
-function onCancelWorkspaceChange() {
-  pendingWorkspaceApproval.value = null;
 }
 
 async function onAdvance(action: "continue" | "skip" | "retry") {
@@ -481,7 +619,7 @@ async function onAdvance(action: "continue" | "skip" | "retry") {
   }
 }
 
-async function onStepSend(text: string) {
+async function onStepSend(payload: { text: string; attachments: ChatAttachment[] }) {
   if (!canOperateActive.value || !activeWorkflowId.value) {
     actionError.value = "Switch to the active workflow to run steps.";
     return;
@@ -489,31 +627,69 @@ async function onStepSend(text: string) {
   const stepId = activeStepId.value;
   if (!stepId) return;
 
-  if (!stepMessages.value[stepId]) {
-    stepMessages.value[stepId] = [];
+  if (!stepChatMemory.activeThreadId.value) {
+    await ensureActiveChatThread();
   }
-  stepMessages.value[stepId].push({ role: "user", content: text });
+  const threadId = stepChatMemory.activeThreadId.value;
+  if (!threadId) return;
+
+  let expanded: string;
+  try {
+    expanded = await expandChatMessage(payload.text, payload.attachments, readWorkspaceFile);
+  } catch (err) {
+    actionError.value = err instanceof Error ? err.message : String(err);
+    return;
+  }
+  console.log("onStepSend", payload.text, payload.attachments, expanded);
+  stepChatMemory.addUserMessage(
+    payload.text,
+    payload.attachments.map((a) => a.path),
+  );
   liveOutput.value[stepId] = "";
 
   running.value = true;
   actionError.value = null;
   try {
     const skills = selectedSkills.value.length ? selectedSkills.value : undefined;
-    for await (const event of runStep(stepId, skills, activeWorkflowId.value)) {
+    const useFileChat = payload.attachments.length > 0;
+    stepChatFileMode.value = useFileChat;
+
+    let eventStream: AsyncGenerator<SseEvent>;
+    if (useFileChat) {
+      eventStream = fileChat(
+        payload.attachments.map((a) => a.path),
+        expanded,
+        skills,
+        stepId,
+        threadId,
+        activeWorkflowId.value,
+      );
+    } else {
+      eventStream = stepChat(
+        expanded,
+        stepId,
+        activeWorkflowId.value,
+        threadId,
+        skills,
+        "agent",
+      );
+    }
+    for await (const event of eventStream) {
       if (event.type === "message") {
         const content = event.chunk.content ?? "";
-        if (content) appendStepAssistant(stepId, content);
+        if (content) {
+          stepChatMemory.addAssistantChunk(content);
+          liveOutput.value[stepId] = (liveOutput.value[stepId] ?? "") + content;
+        }
       } else if (event.type === "tool_start") {
-        appendToolNote(stepId, event.event, "start");
+        stepChatMemory.applyToolStart(event.event);
       } else if (event.type === "tool_end") {
-        appendToolNote(stepId, event.event, "end");
+        stepChatMemory.applyToolEnd(event.event);
+        handleWriteFileToolEnd(event.event);
         const toolName = event.event.name;
         const output = event.event.output;
         if (output) {
-          const pending = parsePendingWorkspaceApproval(output);
-          if (pending) {
-            pendingWorkspaceApproval.value = pending;
-          }
+          handleToolEndOutput(output);
         }
         if (
           toolName &&
@@ -530,27 +706,49 @@ async function onStepSend(text: string) {
     state.value = await fetchState(activeWorkflowId.value);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    appendStepAssistant(stepId, `\n\nError: ${message}`);
+    stepChatMemory.addAssistantChunk(`\n\nError: ${message}`);
     actionError.value = message;
   } finally {
     running.value = false;
   }
 }
 
-async function onFreeSend(text: string) {
-  addFreeUserMessage(text);
-  freeLoading.value = true;
+async function onFreeSend(payload: { text: string; attachments: ChatAttachment[] }) {
+  if (!freeChatMemory.activeThreadId.value) {
+    await ensureActiveChatThread();
+  }
+  const checkpointThreadId = activeThreadCheckpointId();
+  if (!checkpointThreadId) return;
+
+  let expanded: string;
   try {
-    for await (const chunk of streamChat(freeThreadId.value, text)) {
-      if (chunk.content) {
-        addFreeAssistantChunk(chunk.content, chunk.citations);
+    expanded = await expandChatMessage(payload.text, payload.attachments, readWorkspaceFile);
+  } catch (err) {
+    actionError.value = err instanceof Error ? err.message : String(err);
+    return;
+  }
+
+  freeChatMemory.addUserMessage(payload.text, payload.attachments.map((a) => a.path));
+  freeSending.value = true;
+  try {
+    for await (const event of streamChatEvents(checkpointThreadId, expanded, { mode: "agent" })) {
+      if (event.type === "message") {
+        if (event.chunk.content) {
+          freeChatMemory.addAssistantChunk(event.chunk.content, event.chunk.citations);
+        }
+      } else if (event.type === "tool_start") {
+        freeChatMemory.applyToolStart(event.event);
+      } else if (event.type === "tool_end") {
+        freeChatMemory.applyToolEnd(event.event);
+        handleWriteFileToolEnd(event.event);
+        handleToolEndOutput(event.event.output);
       }
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    addFreeAssistantChunk(`Error: ${message}`);
+    freeChatMemory.addAssistantChunk(`Error: ${message}`);
   } finally {
-    freeLoading.value = false;
+    freeSending.value = false;
   }
 }
 </script>
@@ -565,11 +763,31 @@ async function onFreeSend(text: string) {
     </div>
 
     <div
-      v-else-if="error"
-      class="flex flex-1 flex-col items-center justify-center gap-3 p-8"
+      v-else-if="error || needsWorkflowInit"
+      class="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center"
     >
-      <p class="text-red-600">{{ error }}</p>
-      <button class="btn-primary text-sm" @click="loadData">Retry</button>
+      <p v-if="needsWorkflowInit && !error" class="text-gray-600">
+        This project has no workflow configuration yet.
+      </p>
+      <p v-if="error" class="text-red-600">{{ error }}</p>
+      <div class="flex flex-wrap items-center justify-center gap-2">
+        <button
+          v-if="showInitWorkflowAction"
+          class="btn-primary text-sm"
+          :disabled="initLoading"
+          @click="initWorkflowConfig"
+        >
+          {{ initLoading ? "Initializing…" : "Initialize workflow config" }}
+        </button>
+        <button
+          v-if="error"
+          class="btn-primary text-sm bg-gray-600 hover:bg-gray-700"
+          :disabled="initLoading"
+          @click="loadData"
+        >
+          Retry
+        </button>
+      </div>
     </div>
 
     <template v-else-if="workflow && state">
@@ -628,7 +846,7 @@ async function onFreeSend(text: string) {
 
         <div ref="resizeContainer" class="flex flex-1 min-w-0 min-h-0">
           <main
-            class="flex flex-col min-w-0 min-h-0 overflow-hidden border-r border-gray-200"
+            class="flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden border-r border-gray-200"
             :style="{ width: mainPanelWidth }"
           >
             <WorkflowPanelRenderer
@@ -652,9 +870,18 @@ async function onFreeSend(text: string) {
           />
 
           <aside
-            class="flex flex-col min-w-0 min-h-0 bg-white shrink-0"
+            class="flex flex-row min-w-0 min-h-0 bg-white shrink-0"
             :style="{ width: chatPanelWidth }"
           >
+            <ChatThreadSidebar
+              :threads="activeChatThreads"
+              :active-id="activeChatThreadId"
+              v-model:collapsed="chatListCollapsed"
+              @select="onSelectChatThread"
+              @create="onCreateChatThread"
+            />
+
+            <div class="flex flex-col flex-1 min-w-0 min-h-0">
             <div class="flex items-center gap-2 border-b border-gray-200 px-3 py-2">
               <button
                 class="text-xs px-2 py-1 rounded"
@@ -682,6 +909,12 @@ async function onFreeSend(text: string) {
                 v-if="chatMode === 'step' && currentStep"
                 class="ml-auto text-[10px] text-gray-400 truncate max-w-[40%]"
               >
+                <span
+                  v-if="stepChatFileMode"
+                  class="mr-2 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200"
+                >
+                  File mode
+                </span>
                 {{ currentStep.title }}
               </span>
             </div>
@@ -713,35 +946,46 @@ async function onFreeSend(text: string) {
                   :key="`${activeStepId}-${i}`"
                   :msg="msg"
                 />
-                <WorkspaceApprovalCard
-                  v-if="pendingWorkspaceApproval"
-                  :summary="pendingWorkspaceApproval.summary"
-                  :before="pendingWorkspaceApproval.before"
-                  :after="pendingWorkspaceApproval.after"
-                  @approve="onApproveWorkspaceChange"
-                  @cancel="onCancelWorkspaceChange"
-                />
-                <div v-if="running" class="text-gray-400 text-xs">Running step…</div>
                 <div
-                  v-else-if="!currentStepMessages.length"
+                  v-if="!running && !currentStepMessages.length"
                   class="text-gray-400 text-xs"
                 >
                   Chat with agent to run {{ currentStep?.title ?? "this step" }}.
                 </div>
               </template>
               <template v-else>
-                <ChatMessage v-for="(msg, i) in freeMessages" :key="i" :msg="msg" />
-                <div v-if="freeLoading" class="text-gray-400 text-xs">Thinking…</div>
+                <ChatMessage v-for="(msg, i) in freeChatMessages" :key="i" :msg="msg" />
+                <div v-if="freeSending" class="text-gray-400 text-xs">Thinking…</div>
               </template>
+            </div>
+
+            <div
+              v-if="pendingWorkspaceApproval"
+              class="shrink-0 px-4 py-2 border-t border-amber-100 bg-white space-y-1"
+            >
+              <WorkspaceApprovalCard
+                compact
+                :summary="pendingWorkspaceApproval.summary"
+                :before="pendingWorkspaceApproval.before"
+                :after="pendingWorkspaceApproval.after"
+                :approving="workspaceApproving"
+                @approve="onApproveWorkspaceChange"
+                @cancel="onCancelWorkspaceChange"
+              />
+              <p v-if="workspaceApprovalError" class="text-xs text-red-600">
+                {{ workspaceApprovalError }}
+              </p>
             </div>
 
             <ChatInput
               v-if="chatMode === 'step'"
+              ref="stepChatInputRef"
               :loading="running"
               :disabled="!canOperateActive"
               @send="onStepSend"
             />
-            <ChatInput v-else :loading="freeLoading" @send="onFreeSend" />
+            <ChatInput v-else ref="freeChatInputRef" :loading="freeSending" @send="onFreeSend" />
+            </div>
           </aside>
         </div>
       </div>
@@ -771,6 +1015,7 @@ async function onFreeSend(text: string) {
         :steps="workflow.steps.map((s) => ({ id: s.id, title: s.title }))"
         :initial-step-id="activeStepId"
         :skills="allSkills"
+        :panel-api="panelApi"
         @close="showWorkspaceDesigner = false"
         @saved="onWorkspaceSaved"
       />
