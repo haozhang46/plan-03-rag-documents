@@ -4,9 +4,9 @@ import os from "node:os";
 
 const LOG_DIR = path.join(os.homedir(), ".agentflow", "logs");
 
-type LogLevel = "INFO" | "WARN" | "ERROR" | "REQUEST" | "STARTUP";
+export type LogLevel = "INFO" | "WARN" | "ERROR" | "REQUEST" | "STARTUP";
 
-interface LogEntry {
+export interface LogEntry {
   timestamp: string;
   level: LogLevel;
   message: string;
@@ -23,11 +23,16 @@ async function ensureLogDir(): Promise<void> {
 }
 
 async function writeLog(entry: LogEntry): Promise<void> {
-  await ensureLogDir();
-  const logFile = getTodayLogFile();
-  const line = `[${entry.timestamp}] [${entry.level}] ${entry.message}`;
-  const meta = entry.meta ? ` ${JSON.stringify(entry.meta)}` : "";
-  await fs.appendFile(logFile, `${line}${meta}\n`, "utf-8");
+  try {
+    await ensureLogDir();
+    const logFile = getTodayLogFile();
+    const line = `[${entry.timestamp}] [${entry.level}] ${entry.message}`;
+    const meta = entry.meta ? ` ${JSON.stringify(entry.meta)}` : "";
+    await fs.appendFile(logFile, `${line}${meta}\n`, "utf-8");
+  } catch (err) {
+    // Fallback to console to avoid crashing the server
+    console.error("[Logger Error] Failed to write log:", err);
+  }
 }
 
 function formatTimestamp(): string {
