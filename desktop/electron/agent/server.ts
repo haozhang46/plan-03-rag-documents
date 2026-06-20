@@ -1,5 +1,6 @@
 import http from "node:http";
 import { ZodError } from "zod";
+import { logger } from "../utils/logger";
 import { agentService, type ChatMode } from "./agentService";
 import { formatToolOutput } from "./toolEvents";
 import { streamFileChat } from "./fileChatService";
@@ -228,22 +229,44 @@ function parseCreateThreadBody(body: unknown): CreateThreadInput | { error: stri
 export function startAgentServer(options: AgentServerOptions): http.Server {
   const { port, getApiKey, getWorkspaceRoot, getResourceServerUrl } = options;
 
+  // Log startup
+  logger.startup("Agent", port);
+
   function syncAgent(): boolean {
-    const apiKey = getApiKey();
-    if (!apiKey) {
-      agentService.clear();
+    try {
+      const apiKey = getApiKey();
+      if (!apiKey) {
+        logger.warn("API key not configured, clearing agent service");
+        agentService.clear();
+        return false;
+      }
+      agentService.configure({
+        apiKey,
+        workspaceRoot: getWorkspaceRoot(),
+        projectRoot: getWorkspaceRoot(),
+        resourceServerUrl: getResourceServerUrl?.() ?? null,
+      });
+      return true;
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      logger.error("Failed to sync agent", error);
       return false;
     }
-    agentService.configure({
-      apiKey,
-      workspaceRoot: getWorkspaceRoot(),
-      projectRoot: getWorkspaceRoot(),
-      resourceServerUrl: getResourceServerUrl?.() ?? null,
-    });
-    return true;
   }
 
   const server = http.createServer(async (req, res) => {
+    const startTime = Date.now();
+    const method = req.method || "GET";
+    const url = req.url || "/";
+
+    // Capture original end to intercept status code
+    const originalEnd = res.end.bind(res);
+    res.end = (...args: unknown[]) => {
+      const duration = Date.now() - startTime;
+      logger.request(method, url, res.statusCode || 200, duration);
+      return originalEnd(...args);
+    };
+
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -1450,8 +1473,14 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
     }
 
     if (req.method === "POST" && url === "/v1/chat") {
-      if (!syncAgent()) {
-        jsonResponse(res, 400, { detail: "DEEPSEEK_API_KEY not set" });
+      try {
+        if (!syncAgent()) {
+          jsonResponse(res, 400, { detail: "DEEPSEEK_API_KEY not set" });
+          return;
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        jsonResponse(res, 500, { detail: `Agent initialization failed: ${message}` });
         return;
       }
 
