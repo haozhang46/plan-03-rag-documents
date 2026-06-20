@@ -17,7 +17,7 @@ export interface TemplateSummary {
 
 export interface WorkflowListResponse {
   workflows: WorkflowSummary[];
-  activeWorkflowId: string;
+  activeWorkflowId: string | null;
 }
 
 export interface WorkflowStep {
@@ -269,11 +269,13 @@ export function useWorkflow() {
     stepId?: string,
     skills?: string[],
     workflowId?: string,
+    message?: string,
   ): AsyncGenerator<SseEvent> {
     const body: Record<string, unknown> = {};
     if (stepId) body.stepId = stepId;
     if (skills?.length) body.skills = skills;
     if (workflowId) body.workflowId = workflowId;
+    if (message) body.message = message;
 
     const res = await fetch(`${await apiBase()}/v1/workflow/run`, {
       method: "POST",
@@ -284,8 +286,74 @@ export function useWorkflow() {
     if (!res.ok || !res.body) {
       throw new Error(`Workflow run failed: ${res.status}`);
     }
+    console.log("runStep", res.body);
+    yield* parseSseStream(res.body);
+  }
+
+  async function* fileChat(
+    paths: string[],
+    message: string,
+    skills?: string[],
+    stepId?: string,
+    threadId?: string,
+    workflowId?: string,
+  ): AsyncGenerator<SseEvent> {
+    const body: Record<string, unknown> = { paths, message };
+    if (skills?.length) body.skills = skills;
+    if (stepId) body.stepId = stepId;
+    if (threadId) body.threadId = threadId;
+    if (workflowId) body.workflowId = workflowId;
+
+    const res = await fetch(`${await apiBase()}/v1/workspace/file-chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok || !res.body) {
+      throw new Error(`File chat failed: ${res.status}`);
+    }
 
     yield* parseSseStream(res.body);
+  }
+
+  async function* stepChat(
+    message: string,
+    stepId: string,
+    workflowId: string,
+    threadId: string,
+    skills?: string[],
+    mode: "ask" | "plan" | "agent" = "agent",
+  ): AsyncGenerator<SseEvent> {
+    const body: Record<string, unknown> = {
+      message,
+      thread_id: threadId,
+      mode,
+      stepId,
+      workflowId,
+    };
+    if (skills?.length) body.skills = skills;
+
+    const res = await fetch(`${await apiBase()}/v1/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok || !res.body) {
+      throw new Error(`Step chat failed: ${res.status}`);
+    }
+
+    yield* parseSseStream(res.body);
+  }
+
+  async function initWorkflow(templateId = "default-dev-cicd"): Promise<{ workflowId: string }> {
+    const res = await apiJson<{ workflowId: string }>("/v1/workflows/init", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ templateId }),
+    });
+    return res;
   }
 
   return {
@@ -295,6 +363,7 @@ export function useWorkflow() {
     fetchState,
     saveWorkflow,
     createFromTemplate,
+    initWorkflow,
     activateWorkflow,
     deleteWorkflow,
     fetchSkills,
@@ -311,6 +380,8 @@ export function useWorkflow() {
     deleteWorkspacePath,
     advance,
     runStep,
+    fileChat,
+    stepChat,
   };
 }
 
