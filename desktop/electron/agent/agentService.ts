@@ -1,40 +1,62 @@
 import { HumanMessage } from "@langchain/core/messages";
 import { ChatOpenAI } from "@langchain/openai";
-import { MemorySaver } from "@langchain/langgraph";
+import type { SqliteSaver } from "@langchain/langgraph-checkpoint-sqlite";
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
+import { getProjectCheckpointer } from "../chatMemory/checkpointer";
 import {
   buildDesktopLangChainTools,
   buildReadOnlyDesktopTools,
 } from "./tools";
-import { buildChatSystemPrompt, type ChatMode } from "./prompt";
+import { buildChatSystemPrompt, buildStepChatSystemPrompt, type ChatMode } from "./prompt";
+import { getRecursionLimit } from "./recursionLimit";
 
 const DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1";
-const RECURSION_LIMIT = 25;
 
 export type AgentConfig = {
   apiKey: string;
   workspaceRoot: string;
+  projectRoot?: string;
   resourceServerUrl?: string | null;
 };
 
 export type ChatStreamOptions = {
   mode: ChatMode;
   skills?: string[];
+  stepId?: string;
+  workflowId?: string;
 };
 
 export class AgentService {
-  private checkpointer = new MemorySaver();
+  private checkpointer: SqliteSaver | null = null;
+  private checkpointerProjectRoot: string | null = null;
   private config: AgentConfig | null = null;
   private agents = new Map<ChatMode, ReturnType<typeof createReactAgent>>();
 
+  private resolveProjectRoot(config: AgentConfig): string {
+    return config.projectRoot ?? config.workspaceRoot;
+  }
+
+  private getCheckpointer(projectRoot: string): SqliteSaver {
+    if (this.checkpointerProjectRoot !== projectRoot || !this.checkpointer) {
+      this.checkpointerProjectRoot = projectRoot;
+      this.checkpointer = getProjectCheckpointer(projectRoot);
+    }
+    return this.checkpointer;
+  }
+
   configure(config: AgentConfig): void {
+    const projectRoot = this.resolveProjectRoot(config);
+    const prevProjectRoot = this.config ? this.resolveProjectRoot(this.config) : null;
     const unchanged =
       this.config?.apiKey === config.apiKey &&
       this.config?.workspaceRoot === config.workspaceRoot &&
+      prevProjectRoot === projectRoot &&
       this.config?.resourceServerUrl === config.resourceServerUrl &&
       this.agents.size > 0;
     this.config = config;
     if (unchanged) return;
+
+    const checkpointer = this.getCheckpointer(projectRoot);
 
     const model = new ChatOpenAI({
       model: "deepseek-chat",
@@ -53,7 +75,7 @@ export class AgentService {
       createReactAgent({
         llm: model,
         tools: [],
-        checkpointSaver: this.checkpointer,
+        checkpointSaver: checkpointer,
       }),
     );
     this.agents.set(
@@ -61,7 +83,7 @@ export class AgentService {
       createReactAgent({
         llm: model,
         tools: buildReadOnlyDesktopTools(ctx),
-        checkpointSaver: this.checkpointer,
+        checkpointSaver: checkpointer,
       }),
     );
     this.agents.set(
@@ -69,7 +91,7 @@ export class AgentService {
       createReactAgent({
         llm: model,
         tools: buildDesktopLangChainTools(ctx),
-        checkpointSaver: this.checkpointer,
+        checkpointSaver: checkpointer,
       }),
     );
   }
@@ -77,6 +99,8 @@ export class AgentService {
   clear(): void {
     this.config = null;
     this.agents.clear();
+    this.checkpointer = null;
+    this.checkpointerProjectRoot = null;
   }
 
   async probeDeepSeek(): Promise<void> {
@@ -97,6 +121,13 @@ export class AgentService {
     return agent;
   }
 
+  private resolveCheckpointThreadId(threadId: string, mode: ChatMode): string {
+    if (threadId.includes(":")) {
+      return threadId;
+    }
+    return `${mode}:${threadId}`;
+  }
+
   async *streamEvents(
     threadId: string,
     message: string,
@@ -104,11 +135,24 @@ export class AgentService {
   ): AsyncGenerator<{ event: string; data?: Record<string, unknown>; name?: string; run_id?: string }> {
     const mode = options.mode;
     const agent = this.getAgent(mode);
-    const systemPrompt = await buildChatSystemPrompt(
-      mode,
-      this.config!.workspaceRoot,
-      options.skills ?? [],
-    );
+
+    // 根据是否有 step context 选择 system prompt 构建方式
+    let systemPrompt: string;
+    if (options.stepId && options.workflowId) {
+      systemPrompt = await buildStepChatSystemPrompt(
+        mode,
+        this.config!.workspaceRoot,
+        options.stepId,
+        options.workflowId,
+        options.skills ?? [],
+      );
+    } else {
+      systemPrompt = await buildChatSystemPrompt(
+        mode,
+        this.config!.workspaceRoot,
+        options.skills ?? [],
+      );
+    }
 
     const input = {
       messages: [
@@ -118,8 +162,8 @@ export class AgentService {
 
     const events = agent.streamEvents(input, {
       version: "v2",
-      configurable: { thread_id: `${mode}:${threadId}` },
-      recursionLimit: RECURSION_LIMIT,
+      configurable: { thread_id: this.resolveCheckpointThreadId(threadId, mode) },
+      recursionLimit: getRecursionLimit(),
     });
 
     let assistantText = "";
