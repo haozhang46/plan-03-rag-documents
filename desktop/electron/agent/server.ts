@@ -263,7 +263,11 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
     const originalEnd = res.end.bind(res);
     res.end = (...args: unknown[]) => {
       const duration = Date.now() - startTime;
-      logger.request(method, url, res.statusCode || 200, duration);
+      try {
+        logger.request(method, url, res.statusCode || 200, duration);
+      } catch {
+        // Silently ignore logging errors to not break response
+      }
       return originalEnd(...args);
     };
 
