@@ -15,6 +15,8 @@ const langflowBaseUrl = ref("");
 const langflowApiKeyStatus = ref("");
 const langflowApiKeyInput = ref("");
 const langflowAutoStart = ref(true);
+const agentRecursionUnlimited = ref(true);
+const agentRecursionLimit = ref(200);
 
 onMounted(async () => {
   apiKeyStatus.value = await window.desktop.getApiKeyStatus();
@@ -23,6 +25,12 @@ onMounted(async () => {
   langflowBaseUrl.value = await window.desktop.getLangflowBaseUrl();
   langflowApiKeyStatus.value = await window.desktop.getLangflowApiKeyStatus();
   langflowAutoStart.value = await window.desktop.getLangflowAutoStart();
+
+  const recursion = await window.desktop.getAgentRecursionLimit();
+  agentRecursionUnlimited.value = recursion.unlimited;
+  if (recursion.limit != null) {
+    agentRecursionLimit.value = recursion.limit;
+  }
 
   if (resourceServerUrl.value.trim()) {
     try {
@@ -72,6 +80,13 @@ async function saveLangflow() {
 async function toggleLangflowAutoStart() {
   langflowAutoStart.value = !langflowAutoStart.value;
   await window.desktop.setLangflowAutoStart(langflowAutoStart.value);
+}
+
+async function saveAgentRecursionLimit() {
+  await window.desktop.setAgentRecursionLimit({
+    unlimited: agentRecursionUnlimited.value,
+    limit: agentRecursionLimit.value,
+  });
 }
 </script>
 
@@ -149,6 +164,30 @@ async function toggleLangflowAutoStart() {
           </a>
         </p>
       </div>
+    </section>
+
+    <section class="mb-8">
+      <h2 class="text-sm font-medium mb-2">Agent recursion limit</h2>
+      <p class="text-sm text-gray-500 mb-3">
+        Max LangGraph steps per agent run (each tool call uses multiple steps). Increase if you see
+        "Recursion limit reached" during long tasks.
+      </p>
+      <label class="flex items-center gap-2 text-sm mb-3 cursor-pointer">
+        <input
+          type="checkbox"
+          v-model="agentRecursionUnlimited"
+        />
+        Unlimited (recommended)
+      </label>
+      <input
+        v-if="!agentRecursionUnlimited"
+        v-model.number="agentRecursionLimit"
+        type="number"
+        min="1"
+        class="input-field mb-3 w-full"
+        placeholder="500"
+      />
+      <button class="btn-primary" @click="saveAgentRecursionLimit">Save</button>
     </section>
 
     <section>

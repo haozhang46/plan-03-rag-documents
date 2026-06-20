@@ -37,7 +37,20 @@ export async function listDirEntries(
   relPath: string,
 ): Promise<WorkspaceEntry[]> {
   const target = resolveWorkspacePath(workspaceRoot, relPath || ".");
-  const entries = await fs.readdir(target, { withFileTypes: true });
+  let entries: Awaited<ReturnType<typeof fs.readdir>>;
+  try {
+    entries = await fs.readdir(target, { withFileTypes: true });
+  } catch (err) {
+    if (
+      typeof err === "object" &&
+      err !== null &&
+      "code" in err &&
+      (err as NodeJS.ErrnoException).code === "ENOENT"
+    ) {
+      return [];
+    }
+    throw err;
+  }
   const base = relPath ? relPath.replace(/\/$/, "") : "";
   return entries
     .filter((e) => !e.name.startsWith("."))

@@ -6,6 +6,7 @@ import yaml from "yaml";
 import {
   loadWorkflow,
   initProjectFromTemplate,
+  ensureProjectWorkflow,
   listWorkflows,
   getActiveWorkflowId,
   setActiveWorkflowId,
@@ -75,6 +76,22 @@ describe("loadWorkflow", () => {
     expect(exists).toBe(true);
   });
 
+  it("default-dev-cicd template ships all prompt_template files referenced in workflow.yaml", async () => {
+    const templateRoot = path.join(
+      path.dirname(new URL(import.meta.url).pathname),
+      "../../templates/default-dev-cicd",
+    );
+    const wfRaw = await fs.readFile(path.join(templateRoot, "workflow.yaml"), "utf8");
+    const wf = yaml.parse(wfRaw) as { steps: { prompt_template?: string }[] };
+    const prompts = (wf.steps ?? [])
+      .map((s) => s.prompt_template)
+      .filter((p): p is string => Boolean(p));
+    expect(prompts.length).toBeGreaterThan(0);
+    for (const rel of prompts) {
+      await expect(fs.access(path.join(templateRoot, rel))).resolves.toBeUndefined();
+    }
+  });
+
   it("initProjectFromTemplate copies bundled workspaces into .agentflow/workspaces", async () => {
     const project = path.join(tmp, "proj");
     await fs.mkdir(project, { recursive: true });
@@ -94,7 +111,86 @@ describe("loadWorkflow", () => {
     const feDev = JSON.parse(
       await fs.readFile(path.join(wsDir, "fe-dev.workspace.json"), "utf8"),
     ) as { components: unknown[] };
-    expect(feDev.components).toHaveLength(4);
+    expect(feDev.components).toHaveLength(6);
+  });
+
+  it("initProjectFromTemplate is a no-op when .agentflow already exists", async () => {
+    const project = path.join(tmp, "proj");
+    await fs.mkdir(path.join(project, ".agentflow"), { recursive: true });
+    await fs.writeFile(
+      path.join(project, ".agentflow/workflow.yaml"),
+      yaml.stringify({ ...MINIMAL_WF, id: "custom", title: "Custom" }),
+    );
+    await initProjectFromTemplate(project, "default-dev-cicd");
+    const wf = await loadWorkflow(project);
+    expect(wf.id).toBe("custom");
+  });
+
+  it("does not materialize workflow.yaml when .agentflow exists but workflow file is missing", async () => {
+    const project = path.join(tmp, "proj");
+    await fs.mkdir(path.join(project, ".agentflow"), { recursive: true });
+    await fs.writeFile(
+      path.join(project, ".agentflow/state.json"),
+      JSON.stringify({ workflowId: "default-dev-cicd" }, null, 2),
+      "utf8",
+    );
+    const wf = await loadWorkflow(project, "default-dev-cicd");
+    expect(wf.id).toBe("default-dev-cicd");
+    const exists = await fs
+      .access(path.join(project, ".agentflow/workflow.yaml"))
+      .then(() => true)
+      .catch(() => false);
+    expect(exists).toBe(false);
+  });
+
+  it("ensureProjectWorkflow copies default template when project has no workflow", async () => {
+    const project = path.join(tmp, "empty-proj");
+    await fs.mkdir(project, { recursive: true });
+    const id = await ensureProjectWorkflow(project, "default-dev-cicd");
+    expect(id).toBe("default-dev-cicd");
+    const list = await listWorkflows(project);
+    expect(list.some((w) => w.id === "default-dev-cicd")).toBe(true);
+  });
+
+  it("ensureProjectWorkflow throws when .agentflow exists but no workflows are configured", async () => {
+    const project = path.join(tmp, "state-only");
+    await fs.mkdir(path.join(project, ".agentflow"), { recursive: true });
+    await fs.writeFile(
+      path.join(project, ".agentflow/state.json"),
+      JSON.stringify({ workflowId: "default-dev-cicd" }, null, 2),
+      "utf8",
+    );
+    await expect(ensureProjectWorkflow(project)).rejects.toThrow(/No workflows configured/);
+  });
+
+  it("ensureProjectWorkflow does not modify existing workspace JSON", async () => {
+    const project = path.join(tmp, "custom-ws");
+    await writeLegacyWorkflow(project, "default-dev-cicd", "Dev");
+    const wsPath = path.join(project, ".agentflow/workspaces/fe-dev.workspace.json");
+    await fs.mkdir(path.dirname(wsPath), { recursive: true });
+    const custom = {
+      version: 1,
+      stepId: "fe-dev",
+      layout: "tabs",
+      components: [
+        {
+          id: "rules",
+          type: "agent-rules-editor",
+          props: { files: [{ path: "AGENTS.md", label: "AGENTS.md" }] },
+        },
+      ],
+    };
+    await fs.writeFile(wsPath, JSON.stringify(custom, null, 2), "utf8");
+    await ensureProjectWorkflow(project);
+    const reloaded = JSON.parse(await fs.readFile(wsPath, "utf8")) as typeof custom;
+    expect(reloaded.components[0].props.files).toEqual([{ path: "AGENTS.md", label: "AGENTS.md" }]);
+  });
+
+  it("ensureProjectWorkflow returns active workflow when .agentflow exists", async () => {
+    const project = path.join(tmp, "yaml-only");
+    await writeLegacyWorkflow(project, "default-dev-cicd", "Dev");
+    const id = await ensureProjectWorkflow(project);
+    expect(id).toBe("default-dev-cicd");
   });
 });
 

@@ -21,7 +21,9 @@ export default defineConfig({
   },
   theme: {
     colors: {
+      // 暗色主题
       brand: { primary: "#2563eb", secondary: "#64748b" },
+     
     },
   },
 });

@@ -19,6 +19,16 @@ export const WorkspaceSchema = z.object({
 export const COMPONENT_PROPS = {
   "markdown-doc": z.object({
     docsDir: z.string().optional(),
+    mode: z.enum(["directory", "file-list"]).optional(),
+    files: z
+      .array(
+        z.object({
+          path: z.string(),
+          label: z.string(),
+        }),
+      )
+      .optional(),
+    editable: z.boolean().optional(),
   }),
   "architecture-docs": z.object({
     files: z
@@ -42,10 +52,40 @@ export const COMPONENT_PROPS = {
     output: z.string().min(1),
     layers: z.array(z.string().min(1)).min(1),
   }),
+  "be-architecture-plan": z.object({
+    output: z.string().min(1),
+    layers: z.array(z.string().min(1)).min(1),
+  }),
+  "schema-migrations": z.object({
+    migrationsDir: z.string().min(1),
+    output: z.string().min(1),
+  }),
+  "topology-panel": z.object({
+    mode: z.enum(["edit", "view"]).optional(),
+    resourcesFile: z.string().optional(),
+  }),
+  "topology-context": z.object({
+    focusNodes: z.array(z.string()).optional(),
+    envKeys: z.array(z.string()).optional(),
+  }),
+  "cicd-readiness": z.object({
+    gatesStepId: z.string().optional(),
+  }),
   "component-splitter": z.object({
     output: z.string().min(1),
     skills: z.array(z.string()),
     editable: z.boolean(),
+  }),
+  "agent-rules-editor": z.object({
+    files: z
+      .array(
+        z.object({
+          path: z.string().min(1),
+          label: z.string().min(1),
+        }),
+      )
+      .optional(),
+    editable: z.boolean().optional(),
   }),
   "style-tokens-editor": z.object({
     preset: z.enum(["unocss", "tailwind"]),

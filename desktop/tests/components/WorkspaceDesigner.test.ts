@@ -4,11 +4,24 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import WorkspaceDesigner from "../../src/components/workflow/WorkspaceDesigner.vue";
 import type { DesktopApi } from "../../electron/preload";
 import type { WorkspaceDefinition } from "../../src/workspace/registry";
+import type { PanelApi } from "../../src/workspace/registryComponents";
 
 async function settle(): Promise<void> {
   for (let i = 0; i < 5; i++) {
     await flushPromises();
   }
+}
+
+async function waitForPreviewMount(
+  wrapper: ReturnType<typeof mount>,
+): Promise<void> {
+  for (let i = 0; i < 30; i++) {
+    await flushPromises();
+    if (wrapper.find('[data-testid="preview-mount"]').exists()) {
+      return;
+    }
+  }
+  throw new Error("preview-mount did not appear");
 }
 
 const mockSteps = [
@@ -22,6 +35,20 @@ const emptyWorkspace: WorkspaceDefinition = {
   layout: "tabs",
   components: [],
 };
+
+function mockPanelApi(): PanelApi {
+  return {
+    fetchPhase: vi.fn(),
+    fetchGates: vi.fn(),
+    fetchDeploymentConfig: vi.fn(),
+    fetchResourceContext: vi.fn(),
+    fetchTopology: vi.fn(),
+    listWorkspace: vi.fn().mockResolvedValue({ entries: [] }),
+    readWorkspaceFile: vi.fn(),
+    writeWorkspaceFile: vi.fn(),
+    deleteWorkspacePath: vi.fn(),
+  };
+}
 
 describe("WorkspaceDesigner", () => {
   let savePayload: WorkspaceDefinition | null = null;
@@ -70,6 +97,31 @@ describe("WorkspaceDesigner", () => {
                     { key: "root", label: "Root path", type: "string", required: true },
                     { key: "writable", label: "Writable", type: "boolean" },
                   ],
+                },
+                {
+                  type: "agent-rules-editor",
+                  label: "Agent Rules Editor",
+                  description: "Edit agent instruction files",
+                  category: "frontend",
+                  defaultProps: {
+                    files: [
+                      { path: "AGENTS.md", label: "AGENTS.md" },
+                      { path: "CLAUDE.md", label: "CLAUDE.md" },
+                    ],
+                    editable: true,
+                  },
+                  propsFields: [
+                    { key: "files", label: "Files", type: "file-list" },
+                    { key: "editable", label: "Editable", type: "boolean" },
+                  ],
+                },
+                {
+                  type: "agent-run",
+                  label: "Agent Run",
+                  description: "Gates, phase, and run status panel",
+                  category: "workflow",
+                  defaultProps: {},
+                  propsFields: [{ key: "reportPath", label: "Report path", type: "string" }],
                 },
               ],
             }),
@@ -183,5 +235,135 @@ describe("WorkspaceDesigner", () => {
     expect(savePayload!.components).toHaveLength(1);
     expect(savePayload!.components[0].type).toBe("markdown-doc");
     expect(wrapper.emitted("saved")?.[0]?.[0]).toEqual(savePayload);
+  });
+
+  it("renders file-list props with path and label inputs, not [object Object]", async () => {
+    const wrapper = mount(WorkspaceDesigner, {
+      props: {
+        show: true,
+        workflowId: "wf-1",
+        steps: mockSteps,
+        initialStepId: "prd",
+      },
+    });
+    await settle();
+
+    await wrapper.find('[data-testid="library-agent-rules-editor"]').trigger("click");
+    await settle();
+
+    expect(wrapper.find('[data-testid="prop-field-files"]').exists()).toBe(true);
+    expect(wrapper.text()).not.toContain("[object Object]");
+
+    const rows = wrapper.findAll('[data-testid^="file-list-row-"]');
+    expect(rows).toHaveLength(2);
+
+    const row0Inputs = rows[0].findAll("input");
+    expect((row0Inputs[0].element as HTMLInputElement).value).toBe("AGENTS.md");
+    expect((row0Inputs[1].element as HTMLInputElement).value).toBe("AGENTS.md");
+
+    const row1Inputs = rows[1].findAll("input");
+    expect((row1Inputs[0].element as HTMLInputElement).value).toBe("CLAUDE.md");
+    expect((row1Inputs[1].element as HTMLInputElement).value).toBe("CLAUDE.md");
+  });
+
+  it("save preserves file-list object shape", async () => {
+    const wrapper = mount(WorkspaceDesigner, {
+      props: {
+        show: true,
+        workflowId: "wf-1",
+        steps: mockSteps,
+        initialStepId: "prd",
+      },
+    });
+    await settle();
+
+    await wrapper.find('[data-testid="library-agent-rules-editor"]').trigger("click");
+    await settle();
+
+    const row0 = wrapper.find('[data-testid="file-list-row-0"]');
+    await row0.findAll("input")[1].setValue("Agents Guide");
+
+    await wrapper.find('[data-testid="save-workspace"]').trigger("click");
+    await settle();
+
+    expect(savePayload).not.toBeNull();
+    const comp = savePayload!.components[0];
+    expect(comp.type).toBe("agent-rules-editor");
+    expect(comp.props.files).toEqual([
+      { path: "AGENTS.md", label: "Agents Guide" },
+      { path: "CLAUDE.md", label: "CLAUDE.md" },
+    ]);
+  });
+
+  it("shows runtime placeholder when agent-run is selected", async () => {
+    const wrapper = mount(WorkspaceDesigner, {
+      props: {
+        show: true,
+        workflowId: "wf-1",
+        steps: mockSteps,
+        initialStepId: "prd",
+      },
+    });
+    await settle();
+
+    await wrapper.find('[data-testid="library-agent-run"]').trigger("click");
+    await settle();
+
+    const placeholder = wrapper.find('[data-testid="preview-runtime-placeholder"]');
+    expect(placeholder.exists()).toBe(true);
+    expect(placeholder.text()).toContain("Runtime widget");
+    expect(wrapper.find('[data-testid="preview-mount"]').exists()).toBe(false);
+  });
+
+  it("mounts content widget preview with panelApi", async () => {
+    const panelApi = mockPanelApi();
+    const wrapper = mount(WorkspaceDesigner, {
+      props: {
+        show: true,
+        workflowId: "wf-1",
+        steps: mockSteps,
+        initialStepId: "prd",
+        panelApi,
+      },
+    });
+    await settle();
+
+    await wrapper.find('[data-testid="library-code-explorer"]').trigger("click");
+    await waitForPreviewMount(wrapper);
+
+    expect(wrapper.find('[data-testid="preview-column"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="preview-mount"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="preview-runtime-placeholder"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="preview-column"]').text()).toContain("./");
+    expect(panelApi.listWorkspace).toHaveBeenCalled();
+  });
+
+  it("remounts preview widget when a prop changes", async () => {
+    const panelApi = mockPanelApi();
+    const wrapper = mount(WorkspaceDesigner, {
+      props: {
+        show: true,
+        workflowId: "wf-1",
+        steps: mockSteps,
+        initialStepId: "prd",
+        panelApi,
+      },
+    });
+    await settle();
+
+    await wrapper.find('[data-testid="library-code-explorer"]').trigger("click");
+    await waitForPreviewMount(wrapper);
+
+    const previewMount = wrapper.find('[data-testid="preview-mount"]');
+    expect(previewMount.exists()).toBe(true);
+    const initialKey = previewMount.attributes("data-preview-key");
+    expect(initialKey).toBeTruthy();
+
+    await wrapper.find('[data-testid="prop-field-root"] input').setValue("src");
+    await settle();
+
+    const updatedKey = wrapper.find('[data-testid="preview-mount"]').attributes("data-preview-key");
+    expect(updatedKey).not.toBe(initialKey);
+    expect(updatedKey).toContain('"root":"src"');
   });
 });

@@ -93,8 +93,12 @@ def export_compose(topology: Topology) -> str:
             svc["image"] = "mysql:8.0"
         elif node.kind == "cache":
             svc["image"] = "redis:7"
-        elif node.kind == "service" and not node.image:
-            svc["build"] = "."
+        elif node.kind in ("service", "worker") and not node.image:
+            if node.source:
+                dockerfile = node.dockerfile or "Dockerfile"
+                svc["build"] = {"context": node.source, "dockerfile": dockerfile}
+            else:
+                svc["build"] = "."
 
         ports = []
         for mapping in node.ports:

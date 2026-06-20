@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { listWorkflows } from "./loader";
+import { loadWorkflow, listWorkflows } from "./loader";
 import { validateWorkspace, type WorkspaceDefinition } from "./workspaceSchema";
 
 const WORKFLOWS_DIR = ".agentflow/workflows";
@@ -50,6 +50,7 @@ export async function resolveWorkflowLegacy(
   projectRoot: string,
   workflowId: string,
 ): Promise<boolean> {
+  await loadWorkflow(projectRoot, workflowId);
   const list = await listWorkflows(projectRoot);
   const entry = list.find((w) => w.id === workflowId);
   if (!entry) {

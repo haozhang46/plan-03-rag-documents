@@ -1,14 +1,22 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, ref, shallowRef, watch, type Component } from "vue";
 import { useWorkspaceConfig } from "../../composables/useWorkspaceConfig";
 import {
   WORKSPACE_REGISTRY,
   registryEntry,
-  type PropField,
   type WorkspaceComponent,
   type WorkspaceDefinition,
   type WorkspaceRegistryEntry,
 } from "../../workspace/registry";
+import {
+  isRegisteredWidgetType,
+  WIDGET_COMPONENTS,
+  type PanelApi,
+} from "../../workspace/registryComponents";
+import { bindWidgetProps } from "../../workspace/widgetBindProps";
+import WorkspacePropFields from "./WorkspacePropFields.vue";
+
+const RUNTIME_ONLY_TYPES = new Set(["agent-run", "langflow-panel"]);
 
 const props = defineProps<{
   show: boolean;
@@ -16,6 +24,7 @@ const props = defineProps<{
   steps: { id: string; title: string }[];
   initialStepId?: string | null;
   skills?: string[];
+  panelApi?: PanelApi;
 }>();
 
 const emit = defineEmits<{
@@ -53,6 +62,50 @@ const selectedComponent = computed(
 const selectedEntry = computed(() =>
   selectedComponent.value ? registryEntry(selectedComponent.value.type) : undefined,
 );
+
+const previewResolved = shallowRef<Component | null>(null);
+
+const previewKey = computed(() => {
+  const comp = selectedComponent.value;
+  if (!comp) return "";
+  return `${comp.id}-${JSON.stringify(comp.props)}`;
+});
+
+const previewBindProps = computed(() => {
+  const comp = selectedComponent.value;
+  if (!comp) return {};
+  return bindWidgetProps(comp, props.panelApi ?? ({} as PanelApi));
+});
+
+watch(
+  () => selectedComponent.value?.type,
+  async (type) => {
+    previewResolved.value = null;
+    if (!type || !isRegisteredWidgetType(type) || RUNTIME_ONLY_TYPES.has(type)) return;
+    const loader = WIDGET_COMPONENTS[type];
+    const mod = await loader();
+    previewResolved.value = mod.default;
+  },
+  { immediate: true },
+);
+
+function isUnknownType(type: string): boolean {
+  return !isRegisteredWidgetType(type);
+}
+
+function isRuntimeOnlyType(type: string): boolean {
+  return RUNTIME_ONLY_TYPES.has(type);
+}
+
+function runtimePlaceholderMessage(type: string): string | null {
+  if (type === "agent-run") {
+    return "Runtime widget — configure props here; run step in Workflow Run.";
+  }
+  if (type === "langflow-panel") {
+    return "Langflow panel — run in Workflow Run or Chat.";
+  }
+  return null;
+}
 
 const categoryLabel = (category: string) =>
   category.charAt(0).toUpperCase() + category.slice(1);
@@ -163,40 +216,8 @@ function updateSelectedProp(key: string, value: unknown) {
   };
 }
 
-function propStringArrayValue(key: string): string {
-  const val = selectedComponent.value?.props[key];
-  return Array.isArray(val) ? val.map(String).join("\n") : "";
-}
-
-function onStringArrayInput(key: string, raw: string) {
-  const items = raw
-    .split("\n")
-    .map((s) => s.trim())
-    .filter(Boolean);
-  updateSelectedProp(key, items);
-}
-
-function toggleSkillProp(key: string, skill: string) {
-  const current = selectedComponent.value?.props[key];
-  const list = Array.isArray(current) ? [...current.map(String)] : [];
-  const idx = list.indexOf(skill);
-  if (idx >= 0) {
-    list.splice(idx, 1);
-  } else {
-    list.push(skill);
-  }
-  updateSelectedProp(key, list);
-}
-
-function skillSelected(key: string, skill: string): boolean {
-  const current = selectedComponent.value?.props[key];
-  return Array.isArray(current) && current.map(String).includes(skill);
-}
-
-function fieldValue(field: PropField): unknown {
-  const val = selectedComponent.value?.props[field.key];
-  if (val !== undefined) return val;
-  return field.type === "boolean" ? false : field.type === "string[]" || field.type === "skills" ? [] : "";
+function onPropUpdate({ key, value }: { key: string; value: unknown }) {
+  updateSelectedProp(key, value);
 }
 
 async function onSave() {
@@ -227,7 +248,7 @@ async function onSave() {
     data-testid="workspace-designer"
     @click.self="emit('close')"
   >
-    <div class="w-full max-w-5xl h-[85vh] bg-white shadow-xl rounded-lg flex flex-col">
+    <div class="w-[95vw] max-w-7xl h-[85vh] bg-white shadow-xl rounded-lg flex flex-col">
       <div class="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-gray-200">
         <h2 class="text-sm font-semibold text-gray-800">Design workspace</h2>
         <label class="flex items-center gap-2 text-xs text-gray-600">
@@ -337,7 +358,7 @@ async function onSave() {
           </ul>
         </section>
 
-        <section class="w-64 shrink-0 overflow-y-auto p-3">
+        <section class="w-64 shrink-0 border-r border-gray-200 overflow-y-auto p-3">
           <p class="text-[10px] font-medium text-gray-500 uppercase mb-2">Properties</p>
           <div v-if="!selectedComponent" class="text-xs text-gray-400">Select a component.</div>
           <div v-else class="space-y-3">
@@ -350,88 +371,44 @@ async function onSave() {
                 @input="updateSelectedComponent({ label: ($event.target as HTMLInputElement).value })"
               />
             </label>
-            <div
-              v-for="field in selectedEntry?.propsFields ?? []"
-              :key="field.key"
-              class="text-xs"
-              :data-testid="`prop-field-${field.key}`"
-            >
-              <span class="text-gray-500">
-                {{ field.label }}
-                <span v-if="field.required" class="text-red-500">*</span>
-              </span>
-
-              <input
-                v-if="field.type === 'string' || field.type === 'langflow-flow'"
-                :value="String(fieldValue(field) ?? '')"
-                type="text"
-                class="mt-1 w-full border border-gray-300 rounded px-2 py-1 text-xs"
-                @input="updateSelectedProp(field.key, ($event.target as HTMLInputElement).value)"
-              />
-
-              <label v-else-if="field.type === 'boolean'" class="mt-1 flex items-center gap-2">
-                <input
-                  :checked="Boolean(fieldValue(field))"
-                  type="checkbox"
-                  @change="
-                    updateSelectedProp(field.key, ($event.target as HTMLInputElement).checked)
-                  "
-                />
-                <span class="text-gray-600">Enabled</span>
-              </label>
-
-              <select
-                v-else-if="field.type === 'select'"
-                :value="String(fieldValue(field) ?? '')"
-                class="mt-1 w-full border border-gray-300 rounded px-2 py-1 text-xs"
-                @change="updateSelectedProp(field.key, ($event.target as HTMLSelectElement).value)"
-              >
-                <option v-for="opt in field.options ?? []" :key="opt" :value="opt">{{ opt }}</option>
-              </select>
-
-              <textarea
-                v-else-if="field.type === 'string[]'"
-                :value="propStringArrayValue(field.key)"
-                rows="3"
-                class="mt-1 w-full border border-gray-300 rounded px-2 py-1 text-xs font-mono"
-                placeholder="One item per line"
-                @input="onStringArrayInput(field.key, ($event.target as HTMLTextAreaElement).value)"
-              />
-
-              <div v-else-if="field.type === 'skills'" class="mt-1 flex flex-wrap gap-1">
-                <button
-                  v-for="skill in skills ?? []"
-                  :key="skill"
-                  type="button"
-                  class="text-[10px] px-1.5 py-0.5 rounded-full border"
-                  :class="
-                    skillSelected(field.key, skill)
-                      ? 'bg-blue-600 text-white border-blue-600'
-                      : 'bg-white text-gray-600 border-gray-300'
-                  "
-                  @click="toggleSkillProp(field.key, skill)"
-                >
-                  {{ skill }}
-                </button>
-                <input
-                  v-if="!(skills?.length)"
-                  :value="String(fieldValue(field) ?? '')"
-                  type="text"
-                  class="w-full border border-gray-300 rounded px-2 py-1 text-xs"
-                  placeholder="Comma-separated skills"
-                  @input="
-                    updateSelectedProp(
-                      field.key,
-                      ($event.target as HTMLInputElement).value
-                        .split(',')
-                        .map((s) => s.trim())
-                        .filter(Boolean),
-                    )
-                  "
-                />
-              </div>
-            </div>
+            <WorkspacePropFields
+              :fields="selectedEntry?.propsFields ?? []"
+              :values="selectedComponent.props"
+              :skills="skills"
+              @update:prop="onPropUpdate"
+            />
           </div>
+        </section>
+
+        <section class="w-[40%] min-w-0 shrink-0 overflow-y-auto p-3" data-testid="preview-column">
+          <p class="text-[10px] font-medium text-gray-500 uppercase mb-2">Preview</p>
+          <div v-if="!selectedComponent" class="text-xs text-gray-400">
+            Select a component to preview.
+          </div>
+          <template v-else>
+            <div
+              v-if="isUnknownType(selectedComponent.type)"
+              class="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+              data-testid="unknown-widget-error"
+            >
+              Unknown widget type: {{ selectedComponent.type }}
+            </div>
+            <div
+              v-else-if="isRuntimeOnlyType(selectedComponent.type)"
+              class="rounded border border-gray-200 bg-gray-50 p-4 text-xs text-gray-600"
+              data-testid="preview-runtime-placeholder"
+            >
+              {{ runtimePlaceholderMessage(selectedComponent.type) }}
+            </div>
+            <component
+              :is="previewResolved"
+              v-else-if="previewResolved"
+              :key="previewKey"
+              data-testid="preview-mount"
+              :data-preview-key="previewKey"
+              v-bind="previewBindProps"
+            />
+          </template>
         </section>
       </div>
 

@@ -107,11 +107,14 @@ export interface TopologyNode {
   id: string;
   kind: string;
   engine?: string;
+  source?: string;
+  dockerfile?: string;
 }
 
 export interface TopologyEdge {
   from: string;
   to: string;
+  env?: Record<string, string>;
 }
 
 export interface Topology {
@@ -230,7 +233,7 @@ export function useWorkflow() {
   async function listWorkspace(
     relPath: string,
     recursive = false,
-  ): Promise<{ path: string; entries: WorkspaceEntry[] }> {
+  ): Promise<{ path: string; entries: WorkspaceEntry[]; exists?: boolean }> {
     const q = new URLSearchParams({ path: relPath });
     if (recursive) q.set("recursive", "1");
     return apiJson(`/v1/workspace/list?${q}`);

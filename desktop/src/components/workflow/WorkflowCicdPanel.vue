@@ -28,6 +28,10 @@ const platformLabel: Record<DeploymentConfig["platform"], string> = {
   unknown: "Not configured",
 };
 
+function openTopologyCanvas() {
+  window.dispatchEvent(new CustomEvent("agentflow:open-topology"));
+}
+
 async function load() {
   loading.value = true;
   error.value = null;
@@ -69,6 +73,14 @@ onMounted(() => {
   <div class="flex flex-1 min-h-0 flex-col overflow-y-auto">
     <div class="px-4 py-3 border-b border-gray-200 bg-white flex items-center gap-2">
       <h2 class="text-sm font-semibold text-gray-800">CI/CD Deployment</h2>
+      <button
+        type="button"
+        class="text-xs text-blue-600 hover:text-blue-800"
+        data-testid="open-topology-canvas"
+        @click="openTopologyCanvas"
+      >
+        Open Topology Canvas
+      </button>
       <button class="ml-auto text-xs text-gray-500 hover:text-gray-700" @click="load">
         Refresh
       </button>

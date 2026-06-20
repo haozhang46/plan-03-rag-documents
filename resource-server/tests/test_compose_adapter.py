@@ -1,7 +1,7 @@
 import yaml
 
 from app.adapters.compose import export_compose, import_compose
-from app.models.topology import Topology
+from app.models.topology import Edge, Node, Topology
 
 
 def test_import_compose_builds_nodes_and_edges():
@@ -42,3 +42,21 @@ def test_export_empty_topology():
     exported = export_compose(topology)
     doc = yaml.safe_load(exported)
     assert doc["services"] == {}
+
+
+def test_export_compose_uses_source_build_context():
+    topology = Topology(
+        project="demo",
+        nodes=[
+            Node(id="api", kind="service", source="backend", dockerfile="Dockerfile"),
+            Node(id="app-db", kind="database", engine="postgres"),
+        ],
+        edges=[Edge.model_validate({"from": "api", "to": "app-db", "env": {}})],
+        targets=[],
+    )
+    doc = yaml.safe_load(export_compose(topology))
+    assert doc["services"]["api"]["build"] == {
+        "context": "backend",
+        "dockerfile": "Dockerfile",
+    }
+    assert "build" not in doc["services"]["app-db"]

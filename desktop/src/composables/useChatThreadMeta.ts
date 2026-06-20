@@ -34,12 +34,14 @@ export function saveThreadMeta(threadId: string, meta: ChatThreadMeta): void {
 }
 
 export function toggleThreadSkill(meta: ChatThreadMeta, skillName: string): ChatThreadMeta {
-  const skills = meta.skills.includes(skillName)
-    ? meta.skills.filter((s) => s !== skillName)
-    : [...meta.skills, skillName];
+  const skillsArr = meta.skills ?? [];
+  const skills = skillsArr.includes(skillName)
+    ? skillsArr.filter((s) => s !== skillName)
+    : [...skillsArr, skillName];
   return { ...meta, skills };
 }
 
 export function removeThreadSkill(meta: ChatThreadMeta, skillName: string): ChatThreadMeta {
-  return { ...meta, skills: meta.skills.filter((s) => s !== skillName) };
+  const skillsArr = meta.skills ?? [];
+  return { ...meta, skills: skillsArr.filter((s) => s !== skillName) };
 }

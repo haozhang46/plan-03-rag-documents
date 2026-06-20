@@ -88,14 +88,38 @@ describe("validateWorkspace", () => {
         props: { output: "docs/fe-architecture.md", layers: ["pages"] },
       },
       {
-        type: "component-splitter",
-        props: { output: "docs/fe-components.md", skills: ["frontend-design"], editable: true },
+        type: "agent-rules-editor",
+        props: {
+          files: [
+            { path: "AGENTS.md", label: "AGENTS.md" },
+            { path: "CLAUDE.md", label: "CLAUDE.md" },
+          ],
+          editable: true,
+        },
       },
       {
         type: "style-tokens-editor",
         props: { preset: "unocss", target: "fe/uno.config.ts" },
       },
       { type: "langflow-panel", props: { flowId: "chat-default", mode: "run" } },
+      {
+        type: "be-architecture-plan",
+        props: { output: "docs/be-architecture.md", layers: ["api/routes"] },
+      },
+      {
+        type: "schema-migrations",
+        props: { migrationsDir: "backend/migrations", output: "docs/be-schema.md" },
+      },
+      { type: "topology-panel", props: { mode: "edit" } },
+      { type: "topology-context", props: { focusNodes: ["api"] } },
+      { type: "cicd-readiness", props: { gatesStepId: "cicd" } },
+      {
+        type: "markdown-doc",
+        props: {
+          mode: "file-list",
+          files: [{ path: "docs/be-dataflow.md", label: "Data Flow" }],
+        },
+      },
     ];
 
     for (const { type, props } of cases) {

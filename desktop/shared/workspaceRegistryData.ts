@@ -3,6 +3,7 @@ export type PropFieldType =
   | "boolean"
   | "select"
   | "string[]"
+  | "file-list"
   | "skills"
   | "langflow-flow";
 
@@ -38,7 +39,7 @@ export const WORKSPACE_REGISTRY: WorkspaceRegistryEntry[] = [
     description: "Multi-tab architecture documentation",
     category: "docs",
     defaultProps: { files: [] },
-    propsFields: [{ key: "files", label: "Files", type: "string[]" }],
+    propsFields: [{ key: "files", label: "Files", type: "file-list" }],
   },
   {
     type: "code-explorer",
@@ -79,6 +80,61 @@ export const WORKSPACE_REGISTRY: WorkspaceRegistryEntry[] = [
     ],
   },
   {
+    type: "be-architecture-plan",
+    label: "BE Architecture Plan",
+    description: "Backend layered architecture planner",
+    category: "backend",
+    defaultProps: {
+      output: "docs/be-architecture.md",
+      layers: ["api/routes", "agent/graph", "flows", "rag", "auth", "skills"],
+    },
+    propsFields: [
+      { key: "output", label: "Output file", type: "string", required: true },
+      { key: "layers", label: "Layers", type: "string[]", required: true },
+    ],
+  },
+  {
+    type: "schema-migrations",
+    label: "Schema Migrations",
+    description: "Read-only migration scanner and schema summary",
+    category: "backend",
+    defaultProps: { migrationsDir: "backend/migrations", output: "docs/be-schema.md" },
+    propsFields: [
+      { key: "migrationsDir", label: "Migrations directory", type: "string", required: true },
+      { key: "output", label: "Summary output", type: "string", required: true },
+    ],
+  },
+  {
+    type: "topology-panel",
+    label: "Topology Panel",
+    description: "Service topology and middleware editor",
+    category: "backend",
+    defaultProps: { mode: "edit", resourcesFile: ".agentflow/resources.yaml" },
+    propsFields: [
+      { key: "mode", label: "Mode", type: "select", options: ["edit", "view"] },
+      { key: "resourcesFile", label: "Resources file", type: "string" },
+    ],
+  },
+  {
+    type: "topology-context",
+    label: "Topology Context",
+    description: "Read-only service topology slice for frontend context",
+    category: "frontend",
+    defaultProps: { focusNodes: ["api"], envKeys: ["NUXT_PUBLIC_API_BASE"] },
+    propsFields: [
+      { key: "focusNodes", label: "Focus nodes", type: "string[]" },
+      { key: "envKeys", label: "Env keys", type: "string[]" },
+    ],
+  },
+  {
+    type: "cicd-readiness",
+    label: "CI/CD Readiness",
+    description: "Aggregate file, topology, and gate checks before deploy",
+    category: "ops",
+    defaultProps: { gatesStepId: "cicd" },
+    propsFields: [{ key: "gatesStepId", label: "Gates step id", type: "string" }],
+  },
+  {
     type: "component-splitter",
     label: "Component Splitter",
     description: "Component tree with skill load and manual edit",
@@ -87,6 +143,23 @@ export const WORKSPACE_REGISTRY: WorkspaceRegistryEntry[] = [
     propsFields: [
       { key: "output", label: "Output file", type: "string", required: true },
       { key: "skills", label: "Skills", type: "skills" },
+      { key: "editable", label: "Editable", type: "boolean" },
+    ],
+  },
+  {
+    type: "agent-rules-editor",
+    label: "Agent Rules Editor",
+    description: "Edit and add AGENTS.md, CLAUDE.md, and similar agent instruction files",
+    category: "frontend",
+    defaultProps: {
+      files: [
+        { path: "AGENTS.md", label: "AGENTS.md" },
+        { path: "CLAUDE.md", label: "CLAUDE.md" },
+      ],
+      editable: true,
+    },
+    propsFields: [
+      { key: "files", label: "Files", type: "file-list" },
       { key: "editable", label: "Editable", type: "boolean" },
     ],
   },

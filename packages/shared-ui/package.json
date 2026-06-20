@@ -12,6 +12,10 @@
     "vue": "^3.5.0"
   },
   "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.0",
+    "@vue/test-utils": "^2.4.0",
+    "happy-dom": "^17.4.4",
+    "vue": "^3.5.0",
     "vitest": "^3.0.0"
   },
   "scripts": {

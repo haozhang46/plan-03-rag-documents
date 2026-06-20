@@ -1,6 +1,15 @@
 import type { Component } from "vue";
 import type { useWorkflow } from "../composables/useWorkflow";
 
+export type ChatFileAttachment = {
+  path: string;
+  label?: string;
+};
+
+export type RuleFileEntry = { path: string; label: string };
+
+export type ArchitecturePlanWidgetType = "fe-architecture-plan" | "be-architecture-plan";
+
 export type PanelApi = Pick<
   ReturnType<typeof useWorkflow>,
   | "fetchPhase"
@@ -8,11 +17,21 @@ export type PanelApi = Pick<
   | "fetchDeploymentConfig"
   | "fetchResourceContext"
   | "fetchTopology"
+  | "fetchOpsSummary"
   | "listWorkspace"
   | "readWorkspaceFile"
   | "writeWorkspaceFile"
   | "deleteWorkspacePath"
->;
+> & {
+  addToChat?: (item: ChatFileAttachment) => void | Promise<void>;
+  persistRuleFiles?: (files: RuleFileEntry[], componentId: string) => Promise<void>;
+  persistArchitectureLayers?: (
+    layers: string[],
+    componentId: string,
+    widgetType: ArchitecturePlanWidgetType,
+  ) => Promise<void>;
+  subscribeFileWrites?: (handler: (path: string) => void) => () => void;
+};
 
 export const WIDGET_COMPONENTS: Record<string, () => Promise<{ default: Component }>> = {
   "markdown-doc": () => import("./widgets/MarkdownDocWidget.vue"),
@@ -21,7 +40,13 @@ export const WIDGET_COMPONENTS: Record<string, () => Promise<{ default: Componen
   "agent-run": () => import("./widgets/AgentRunWidget.vue"),
   "cicd-config": () => import("./widgets/CicdConfigWidget.vue"),
   "fe-architecture-plan": () => import("./widgets/FeArchitecturePlanWidget.vue"),
+  "be-architecture-plan": () => import("./widgets/BeArchitecturePlanWidget.vue"),
+  "schema-migrations": () => import("./widgets/SchemaMigrationsWidget.vue"),
+  "topology-panel": () => import("./widgets/TopologyPanelWidget.vue"),
+  "topology-context": () => import("./widgets/TopologyContextWidget.vue"),
+  "cicd-readiness": () => import("./widgets/CicdReadinessWidget.vue"),
   "component-splitter": () => import("./widgets/ComponentSplitterWidget.vue"),
+  "agent-rules-editor": () => import("./widgets/AgentRulesEditorWidget.vue"),
   "style-tokens-editor": () => import("./widgets/StyleTokensEditorWidget.vue"),
   "langflow-panel": () => import("./widgets/LangflowPanelWidget.vue"),
 };

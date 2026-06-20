@@ -18,6 +18,8 @@ class Node(BaseModel):
     runtime: str | None = None
     engine: str | None = None
     image: str | None = None
+    source: str | None = None
+    dockerfile: str | None = None
     ports: list[PortMapping] = Field(default_factory=list)
 
 

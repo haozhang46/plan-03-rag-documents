@@ -2,6 +2,7 @@ import http from "node:http";
 import { ZodError } from "zod";
 import { logger } from "../utils/logger";
 import { agentService, type ChatMode } from "./agentService";
+import { AgentStreamFilter } from "./agentStreamFilter";
 import { formatToolOutput } from "./toolEvents";
 import { streamFileChat } from "./fileChatService";
 import { listSkillCatalog, listSkills } from "../skills/loader";
@@ -34,6 +35,7 @@ import { IntentSchema, RiskSchema, WorkflowSchema } from "../workflow/types";
 import {
   workspaceDeletePath,
   workspaceDeploymentConfig,
+  workspaceFileExists,
   workspaceListDir,
   workspaceListFiles,
   workspaceReadFile,
@@ -800,10 +802,15 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       const relPath = query.get("path") ?? "";
       const recursive = query.get("recursive") === "1";
       try {
-        const entries = recursive
-          ? await workspaceListFiles(getWorkspaceRoot(), relPath)
-          : await workspaceListDir(getWorkspaceRoot(), relPath);
-        jsonResponse(res, 200, { path: relPath, entries });
+        const workspaceRoot = getWorkspaceRoot();
+        const exists =
+          relPath === "" || (await workspaceFileExists(workspaceRoot, relPath));
+        const entries = exists
+          ? recursive
+            ? await workspaceListFiles(workspaceRoot, relPath)
+            : await workspaceListDir(workspaceRoot, relPath)
+          : [];
+        jsonResponse(res, 200, { path: relPath, entries, exists });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         jsonResponse(res, 400, { detail: message });
@@ -1280,7 +1287,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
-    const chatMemoryMessagesMatch = url?.match(
+    const chatMemoryMessagesMatch = pathname?.match(
       /^\/v1\/chat-memory\/threads\/([^/]+)\/messages$/,
     );
     if (req.method === "PUT" && chatMemoryMessagesMatch) {
@@ -1326,7 +1333,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
-    const chatMemoryThreadMatch = url?.match(/^\/v1\/chat-memory\/threads\/([^/]+)$/);
+    const chatMemoryThreadMatch = pathname?.match(/^\/v1\/chat-memory\/threads\/([^/]+)$/);
     if (chatMemoryThreadMatch) {
       const threadId = decodeURIComponent(chatMemoryThreadMatch[1]);
       const projectRoot = requireProjectRoot(getWorkspaceRoot, res);
@@ -1525,6 +1532,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
             stepId: payload.stepId,
             workflowId: payload.workflowId,
           });
+          const streamFilter = new AgentStreamFilter(mode);
           for await (const event of events) {
             if (event.event === "plan_ready") {
               writeSse(res, "plan_ready", event.data ?? {});
@@ -1533,22 +1541,32 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
             if (event.event === "on_chat_model_stream") {
               const chunk = event.data?.chunk as { content?: string } | undefined;
               if (chunk?.content) {
-                writeSse(res, "message", { content: chunk.content });
+                for (const action of streamFilter.onModelChunk(chunk.content)) {
+                  writeSse(res, "message", { content: action.content });
+                }
               }
             } else if (event.event === "on_tool_start") {
-              writeSse(res, "tool_start", {
-                call_id: event.run_id ?? "",
-                name: event.name ?? "",
-              });
+              streamFilter.onToolStart();
+              if (mode === "agent") {
+                writeSse(res, "tool_start", {
+                  call_id: event.run_id ?? "",
+                  name: event.name ?? "",
+                });
+              }
             } else if (event.event === "on_tool_end") {
-              const output = formatToolOutput(event.data?.output);
-              writeSse(res, "tool_end", {
-                call_id: event.run_id ?? "",
-                name: event.name ?? "",
-                ok: true,
-                ...(output !== undefined ? { output } : {}),
-              });
+              if (mode === "agent") {
+                const output = formatToolOutput(event.data?.output);
+                writeSse(res, "tool_end", {
+                  call_id: event.run_id ?? "",
+                  name: event.name ?? "",
+                  ok: true,
+                  ...(output !== undefined ? { output } : {}),
+                });
+              }
             }
+          }
+          for (const action of streamFilter.finish()) {
+            writeSse(res, "message", { content: action.content });
           }
         } else {
           // Fallback to Claude Code

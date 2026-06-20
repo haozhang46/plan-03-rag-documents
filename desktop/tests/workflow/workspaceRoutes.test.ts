@@ -310,7 +310,9 @@ describe("workspace API routes (modern workflow)", () => {
     const feDev = JSON.parse(getFe.body) as { components: Array<{ type: string }> };
     expect(feDev.components.map((c) => c.type)).toEqual([
       "fe-architecture-plan",
-      "component-splitter",
+      "markdown-doc",
+      "topology-context",
+      "agent-rules-editor",
       "style-tokens-editor",
       "code-explorer",
     ]);

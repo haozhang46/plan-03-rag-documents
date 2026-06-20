@@ -18,6 +18,13 @@ contextBridge.exposeInMainWorld("desktop", {
     ipcRenderer.invoke("settings:getLangflowAutoStart") as Promise<boolean>,
   setLangflowAutoStart: (enabled: boolean) =>
     ipcRenderer.invoke("settings:setLangflowAutoStart", enabled) as Promise<boolean>,
+  getAgentRecursionLimit: () =>
+    ipcRenderer.invoke("settings:getAgentRecursionLimit") as Promise<{
+      unlimited: boolean;
+      limit: number | null;
+    }>,
+  setAgentRecursionLimit: (payload: { unlimited?: boolean; limit?: number }) =>
+    ipcRenderer.invoke("settings:setAgentRecursionLimit", payload) as Promise<boolean>,
   restartLangflow: () => ipcRenderer.invoke("langflow:restart") as Promise<unknown>,
   getWorkspace: () => ipcRenderer.invoke("workspace:get") as Promise<string>,
   pickWorkspace: () => ipcRenderer.invoke("workspace:pick") as Promise<string>,
@@ -40,6 +47,8 @@ export type DesktopApi = {
   setLangflow: (baseUrl: string, apiKey: string) => Promise<boolean>;
   getLangflowAutoStart: () => Promise<boolean>;
   setLangflowAutoStart: (enabled: boolean) => Promise<boolean>;
+  getAgentRecursionLimit: () => Promise<{ unlimited: boolean; limit: number | null }>;
+  setAgentRecursionLimit: (payload: { unlimited?: boolean; limit?: number }) => Promise<boolean>;
   restartLangflow: () => Promise<unknown>;
   getWorkspace: () => Promise<string>;
   pickWorkspace: () => Promise<string>;

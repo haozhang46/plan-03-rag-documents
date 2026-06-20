@@ -15,6 +15,10 @@ vi.mock("@langchain/langgraph", () => ({
   MemorySaver: vi.fn(),
 }));
 
+vi.mock("../../electron/chatMemory/checkpointer", () => ({
+  getProjectCheckpointer: vi.fn(() => ({})),
+}));
+
 vi.mock("@langchain/langgraph/prebuilt", () => ({
   createReactAgent: vi.fn(() => ({
     streamEvents: vi.fn(async function* () {

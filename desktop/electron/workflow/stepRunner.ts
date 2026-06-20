@@ -165,7 +165,7 @@ export class StepRunner {
       const userPrompt = step.prompt_template
         ? await renderPromptTemplate(step.prompt_template, this.projectRoot, {
             prior_phase: priorPhase,
-          })
+          }, this.workflow.id)
         : step.title;
 
       const executor = getExecutor(step.executor);

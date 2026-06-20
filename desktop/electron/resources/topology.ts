@@ -13,6 +13,8 @@ export interface TopologyNode {
   runtime?: string;
   engine?: string;
   image?: string | null;
+  source?: string;
+  dockerfile?: string;
   ports?: TopologyPort[];
 }
 
@@ -106,6 +108,9 @@ export function formatTopologyContextForPrompt(topology: Topology): string {
       label += ` (${node.engine})`;
     } else if (node.kind !== "service") {
       label += ` (${node.kind})`;
+    }
+    if (node.source) {
+      label += ` [source: ${node.source}]`;
     }
     const deps = adjacency.get(node.id);
     if (deps?.length) {

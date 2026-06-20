@@ -13,7 +13,7 @@ export async function* parseSseStream(
   const dec = new TextDecoder();
   let buf = "";
   let currentEvent = "message";
-
+  console.log("parseSseStream", body);
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -38,6 +38,7 @@ export async function* parseSseStream(
           yield { type: "message", chunk: data as ChatResponseChunk };
         }
       } catch {
+        console.error("parseSseStream", line);
         // skip unparseable chunks
       }
     }

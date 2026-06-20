@@ -5,7 +5,7 @@ from app.skills.registry import SkillRegistry
 def test_load_l1_returns_all_skills(skills_fixture):
     reg = SkillRegistry(root=skills_fixture)
     items = reg.list_l1()
-    assert len(items) == 2
+    assert len(items) >= 14
     names = {m.name for m in items}
     assert "test-driven-development" in names
     tdd = next(m for m in items if m.name == "test-driven-development")

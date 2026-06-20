@@ -24,8 +24,18 @@ export interface TemplateSummary {
   source: "builtin" | "user";
 }
 
-const ACTIVE_FILE = ".agentflow/active-workflow.json";
-const WORKFLOWS_DIR = ".agentflow/workflows";
+const AGENTFLOW_DIR = ".agentflow";
+const ACTIVE_FILE = `${AGENTFLOW_DIR}/active-workflow.json`;
+const WORKFLOWS_DIR = `${AGENTFLOW_DIR}/workflows`;
+
+async function agentflowExists(projectRoot: string): Promise<boolean> {
+  try {
+    const stat = await fs.stat(path.join(projectRoot, AGENTFLOW_DIR));
+    return stat.isDirectory();
+  } catch {
+    return false;
+  }
+}
 
 export function templatesRoot(): string {
   return path.join(moduleDir(), "../../templates");
@@ -157,8 +167,7 @@ export async function getActiveWorkflowId(projectRoot: string): Promise<string> 
     return list[0].id;
   }
 
-  const wf = await loadWorkflow(projectRoot);
-  return wf.id;
+  throw new Error("No workflows configured");
 }
 
 export async function setActiveWorkflowId(
@@ -185,16 +194,15 @@ export async function loadWorkflow(
   projectRoot: string,
   workflowId?: string,
 ): Promise<WorkflowDefinition> {
-  const list = await listWorkflows(projectRoot);
-
-  if (list.length === 0) {
-    const fallback = path.join(templatesRoot(), "default-dev-cicd/workflow.yaml");
-    return loadWorkflowFile(fallback);
-  }
-
+  let list = await listWorkflows(projectRoot);
   const id = workflowId ?? (await getActiveWorkflowId(projectRoot));
-  const entry = findWorkflowEntry(list, id);
+  let entry = findWorkflowEntry(list, id);
+
   if (!entry) {
+    if (list.length === 0) {
+      const fallback = path.join(templatesRoot(), "default-dev-cicd/workflow.yaml");
+      return loadWorkflowFile(fallback);
+    }
     throw new Error(`Workflow not found: ${id}`);
   }
 
@@ -310,7 +318,29 @@ export async function initProjectFromTemplate(
   projectRoot: string,
   templateId: string,
 ): Promise<void> {
+  if (await agentflowExists(projectRoot)) return;
   const src = path.join(templatesRoot(), templateId);
-  const dest = path.join(projectRoot, ".agentflow");
+  const dest = path.join(projectRoot, AGENTFLOW_DIR);
   await fs.cp(src, dest, { recursive: true });
+}
+
+/** Ensure project has at least one workflow YAML (copy template only when .agentflow is missing). */
+export async function ensureProjectWorkflow(
+  projectRoot: string,
+  templateId = "default-dev-cicd",
+): Promise<string> {
+  if (await agentflowExists(projectRoot)) {
+    const list = await listWorkflows(projectRoot);
+    if (list.length > 0) {
+      try {
+        return await getActiveWorkflowId(projectRoot);
+      } catch {
+        return list[0].id;
+      }
+    }
+    throw new Error("No workflows configured");
+  }
+
+  await initProjectFromTemplate(projectRoot, templateId);
+  return templateId;
 }

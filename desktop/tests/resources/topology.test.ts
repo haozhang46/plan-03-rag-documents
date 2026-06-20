@@ -6,6 +6,7 @@ import {
   formatTopologyContextForPrompt,
   resolveTopology,
   combineResourceAndTopologyContext,
+  type TopologyNode,
 } from "../../electron/resources/topology";
 
 const sampleTopologyYaml = `version: 1
@@ -99,6 +100,29 @@ describe("formatTopologyContextForPrompt", () => {
     expect(markdown).toContain("## Service Topology");
     expect(markdown).toContain("app-db (mysql)");
     expect(markdown).toContain("targets: dev=docker-compose");
+  });
+
+  it("formatTopologyContextForPrompt includes source", () => {
+    const md = formatTopologyContextForPrompt({
+      version: 1,
+      project: "x",
+      nodes: [{ id: "api", kind: "service", source: "backend" }],
+      edges: [],
+      targets: [],
+    });
+    expect(md).toContain("source: backend");
+  });
+});
+
+describe("TopologyNode source fields", () => {
+  it("accepts source and dockerfile on service nodes", () => {
+    const node: TopologyNode = {
+      id: "api",
+      kind: "service",
+      source: "backend",
+      dockerfile: "Dockerfile",
+    };
+    expect(node.source).toBe("backend");
   });
 });
 

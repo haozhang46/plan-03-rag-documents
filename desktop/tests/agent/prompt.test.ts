@@ -12,11 +12,10 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("read-only");
   });
 
-  it("includes agent tooling preamble", async () => {
+  it("includes agent tooling preamble and agentflow context", async () => {
     const prompt = await buildChatSystemPrompt("agent", "/tmp/project", []);
     expect(prompt).toContain("autonomous dev agent");
-    expect(prompt).toContain("workspace_*");
-    expect(prompt).toContain("workspace_list_registry");
-    expect(prompt).toContain("langflow-panel");
+    expect(prompt).toContain("Agent Flow context");
+    expect(prompt).toContain("Available tools");
   });
 });

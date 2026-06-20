@@ -17,6 +17,10 @@ onMounted(async () => {
   const recent = await window.desktop.getRecentProjects();
   view.value =
     workspace.value && recent.includes(workspace.value) ? "workflow" : "home";
+
+  window.addEventListener("agentflow:open-topology", () => {
+    view.value = "topology";
+  });
 });
 
 function onProjectOpened(path: string) {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import { useSubmitOnEnter, useTextareaHistoryKeydown, useTextareaUndo } from "@agent-flow/shared-ui";
 
 export interface SkillOption {
   name: string;
@@ -19,8 +20,10 @@ const emit = defineEmits<{
 }>();
 
 const text = ref("");
+const textareaRef = ref<HTMLTextAreaElement | null>(null);
 const showSlashMenu = ref(false);
 const slashFilter = ref("");
+const { record, undo, redo } = useTextareaUndo();
 
 const filteredSkills = computed(() => {
   const q = slashFilter.value.toLowerCase();
@@ -30,14 +33,17 @@ const filteredSkills = computed(() => {
   );
 });
 
-function autoResize(e: Event) {
-  const el = e.target as HTMLTextAreaElement;
-  el.style.height = "auto";
-  el.style.height = Math.min(el.scrollHeight, 200) + "px";
+function resizeTextarea(el?: HTMLTextAreaElement | null) {
+  const target = el ?? textareaRef.value;
+  if (!target) return;
+  target.style.height = "auto";
+  target.style.height = target.scrollHeight + "px";
 }
 
 function onInput(e: Event) {
-  autoResize(e);
+  const el = e.target as HTMLTextAreaElement;
+  record(el.value);
+  resizeTextarea(el);
   const value = text.value;
   const slashIdx = value.lastIndexOf("/");
   if (slashIdx >= 0 && (slashIdx === 0 || value[slashIdx - 1] === " " || value[slashIdx - 1] === "\n")) {
@@ -58,6 +64,7 @@ function pickSkill(name: string) {
   const slashIdx = value.lastIndexOf("/");
   if (slashIdx >= 0) {
     text.value = value.slice(0, slashIdx).trimEnd();
+    record(text.value);
   }
   showSlashMenu.value = false;
   slashFilter.value = "";
@@ -68,8 +75,18 @@ function send() {
   if (!trimmed || props.loading) return;
   emit("send", trimmed);
   text.value = "";
+  record("");
   showSlashMenu.value = false;
 }
+
+const { composing, onCompositionStart, onCompositionEnd, onEnterKeydown } = useSubmitOnEnter(send);
+const { onHistoryKeydown } = useTextareaHistoryKeydown({
+  composing,
+  text,
+  undo,
+  redo,
+  onResize: () => resizeTextarea(),
+});
 
 watch(
   () => props.loading,
@@ -113,12 +130,16 @@ watch(
 
     <form class="flex items-end gap-3 p-4" @submit.prevent="send">
       <textarea
+        ref="textareaRef"
         v-model="text"
-        class="input-field resize-none min-h-[44px] max-h-[200px] flex-1"
+        class="input-field resize-none min-h-[44px] flex-1"
         rows="1"
         placeholder="Type a message… (/ for skills)"
         :disabled="loading"
-        @keydown.enter.exact.prevent="send"
+        @compositionstart="onCompositionStart"
+        @compositionend="onCompositionEnd"
+        @keydown="onHistoryKeydown"
+        @keydown.enter.exact="onEnterKeydown"
         @input="onInput"
       />
       <button type="submit" class="btn-primary flex-shrink-0" :disabled="!text.trim() || loading">

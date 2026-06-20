@@ -18,7 +18,7 @@ def test_prepare_sets_selected_skills(skills_fixture, monkeypatch):
     assert "selected_skills" in out
     assert "subagent-driven-development" in out["selected_skills"]
     assert "skill_context" in out
-    assert "Subagent-driven development" in out["skill_context"]
+    assert "Subagent-Driven Development" in out["skill_context"]
 
     get_settings.cache_clear()
 

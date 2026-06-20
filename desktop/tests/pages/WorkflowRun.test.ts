@@ -68,6 +68,38 @@ const mockState = {
   threadId: "thread-1",
 };
 
+function mockChatMemoryFetch(url: string, method: string) {
+  if (url.match(/\/v1\/chat-memory\/threads\/[^/?]+/) && method === "GET") {
+    return new Response(
+      JSON.stringify({
+        meta: {
+          id: "thread-1",
+          title: "New Chat",
+          createdAt: "2026-06-20T00:00:00.000Z",
+          updatedAt: "2026-06-20T00:00:00.000Z",
+          checkpointThreadId: "step:default-dev-cicd:prd:thread-1",
+        },
+        messages: [],
+      }),
+      { status: 200 },
+    );
+  }
+  if (url.includes("/v1/chat-memory/threads") && method === "GET") {
+    return new Response(JSON.stringify([]), { status: 200 });
+  }
+  if (url.includes("/v1/chat-memory/threads") && method === "POST") {
+    const meta = {
+      id: "thread-1",
+      title: "New Chat",
+      createdAt: "2026-06-20T00:00:00.000Z",
+      updatedAt: "2026-06-20T00:00:00.000Z",
+      checkpointThreadId: "step:default-dev-cicd:prd:thread-1",
+    };
+    return new Response(JSON.stringify(meta), { status: 201 });
+  }
+  return null;
+}
+
 describe("WorkflowRun", () => {
   beforeEach(() => {
     const desktop: DesktopApi = {
@@ -88,8 +120,11 @@ describe("WorkflowRun", () => {
 
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (input: string | URL) => {
+      vi.fn(async (input: string | URL, init?: RequestInit) => {
         const url = String(input);
+        const method = init?.method ?? "GET";
+        const chatMemory = mockChatMemoryFetch(url, method, init);
+        if (chatMemory) return chatMemory;
         if (
           url.includes("/v1/workflows") &&
           !url.includes("/current") &&
@@ -186,8 +221,11 @@ describe("WorkflowRun", () => {
   it("renders workspace from API when available", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (input: string | URL) => {
+      vi.fn(async (input: string | URL, init?: RequestInit) => {
         const url = String(input);
+        const method = init?.method ?? "GET";
+        const chatMemory = mockChatMemoryFetch(url, method, init);
+        if (chatMemory) return chatMemory;
         if (url.includes("/v1/workflows") && !url.includes("/current") && !url.includes("/templates") && !url.includes("/workspaces/")) {
           return new Response(
             JSON.stringify({
@@ -232,5 +270,41 @@ describe("WorkflowRun", () => {
     await settle();
 
     expect(wrapper.text()).toContain("Documents");
+  });
+
+  it("shows initialize workflow action when project has no workflows", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        if (url.includes("/v1/workflows/init")) {
+          return new Response(JSON.stringify({ workflowId: "default-dev-cicd" }), { status: 200 });
+        }
+        if (
+          url.includes("/v1/workflows") &&
+          !url.includes("/current") &&
+          !url.includes("/templates") &&
+          !url.includes("/workspaces/") &&
+          !url.includes("/init")
+        ) {
+          return new Response(
+            JSON.stringify({ workflows: [], activeWorkflowId: null }),
+            { status: 200 },
+          );
+        }
+        if (url.includes("/v1/skills")) {
+          return new Response(JSON.stringify([]), { status: 200 });
+        }
+        return new Response("not found", { status: 404 });
+      }),
+    );
+
+    const wrapper = mount(WorkflowRun, {
+      props: { workspace: "/tmp/project" },
+    });
+    await settle();
+
+    expect(wrapper.text()).toContain("no workflow configuration");
+    expect(wrapper.text()).toContain("Initialize workflow config");
   });
 });

@@ -12,6 +12,6 @@ describe("skill loader", () => {
     const bodies = await loadSkillBodies(["test-driven-development"]);
     expect(bodies.length).toBe(1);
     expect(bodies[0]).toContain("test-driven-development");
-    expect(bodies[0]).toContain("TDD");
+    expect(bodies[0]).toContain("Test-Driven Development");
   });
 });

@@ -138,6 +138,11 @@ export class AgentService {
 
     // 根据是否有 step context 选择 system prompt 构建方式
     let systemPrompt: string;
+    const chatContext = {
+      resourceServerUrl: this.config!.resourceServerUrl,
+      workflowId: options.workflowId,
+      stepId: options.stepId,
+    };
     if (options.stepId && options.workflowId) {
       systemPrompt = await buildStepChatSystemPrompt(
         mode,
@@ -145,12 +150,14 @@ export class AgentService {
         options.stepId,
         options.workflowId,
         options.skills ?? [],
+        chatContext,
       );
     } else {
       systemPrompt = await buildChatSystemPrompt(
         mode,
         this.config!.workspaceRoot,
         options.skills ?? [],
+        chatContext,
       );
     }
 

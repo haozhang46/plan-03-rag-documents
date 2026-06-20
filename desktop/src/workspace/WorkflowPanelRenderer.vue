@@ -1,17 +1,10 @@
 <script setup lang="ts">
 import { computed, ref, shallowRef, watch, type Component } from "vue";
-import type { StepStatus } from "../composables/useWorkflow";
 import type { WorkspaceComponent, WorkspaceDefinition } from "./registry";
 import { isRegisteredWidgetType, WIDGET_COMPONENTS, type PanelApi } from "./registryComponents";
+import { bindWidgetProps, type PanelRuntimeContext } from "./widgetBindProps";
 
-export interface PanelRuntimeContext {
-  stepId?: string;
-  stepTitle?: string;
-  status?: StepStatus;
-  reportPath?: string | null;
-  running?: boolean;
-  liveOutput?: string;
-}
+export type { PanelRuntimeContext };
 
 const props = defineProps<{
   workspace: WorkspaceDefinition;
@@ -57,31 +50,8 @@ function tabLabel(comp: WorkspaceComponent): string {
   return comp.label ?? comp.id;
 }
 
-function componentProps(comp: WorkspaceComponent): Record<string, unknown> {
-  if (comp.type !== "agent-run") {
-    return comp.props;
-  }
-  const reportPath =
-    (comp.props.reportPath as string | undefined) ??
-    props.runtime?.reportPath ??
-    null;
-  return {
-    ...comp.props,
-    api: props.api,
-    stepId: props.runtime?.stepId ?? props.workspace.stepId,
-    stepTitle: props.runtime?.stepTitle ?? props.workspace.stepId,
-    status: props.runtime?.status ?? "pending",
-    reportPath,
-    running: props.runtime?.running ?? false,
-    liveOutput: props.runtime?.liveOutput ?? "",
-  };
-}
-
 function bindProps(comp: WorkspaceComponent): Record<string, unknown> {
-  if (comp.type === "agent-run") {
-    return componentProps(comp);
-  }
-  return { api: props.api, ...comp.props };
+  return bindWidgetProps(comp, props.api, props.runtime, props.workspace.stepId);
 }
 
 function isUnknownType(type: string): boolean {
@@ -115,9 +85,13 @@ function isUnknownType(type: string): boolean {
         </button>
       </div>
 
-      <div class="flex-1 min-h-0 overflow-auto">
+      <div class="flex flex-col flex-1 min-h-0 overflow-hidden">
         <template v-for="comp in components" :key="comp.id">
-          <div v-if="activeTabId === comp.id" class="h-full min-h-0" role="tabpanel">
+          <div
+            v-if="activeTabId === comp.id"
+            class="flex flex-col flex-1 min-h-0 overflow-hidden"
+            role="tabpanel"
+          >
             <div
               v-if="isUnknownType(comp.type)"
               class="m-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700"
@@ -136,11 +110,11 @@ function isUnknownType(type: string): boolean {
     </template>
 
     <template v-else>
-      <div class="flex-1 min-h-0 overflow-auto divide-y divide-gray-200">
+      <div class="flex flex-col flex-1 min-h-0 overflow-auto divide-y divide-gray-200">
         <section
           v-for="comp in components"
           :key="comp.id"
-          class="flex flex-col min-h-0"
+          class="flex flex-col flex-1 min-h-0"
           data-testid="stack-section"
         >
           <header
@@ -149,7 +123,7 @@ function isUnknownType(type: string): boolean {
           >
             {{ comp.label }}
           </header>
-          <div class="flex-1 min-h-0">
+          <div class="flex flex-col flex-1 min-h-0">
             <div
               v-if="isUnknownType(comp.type)"
               class="m-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700"

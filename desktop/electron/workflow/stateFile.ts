@@ -1,13 +1,14 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { listWorkflows } from "./loader";
+import { loadWorkflow, listWorkflows } from "./loader";
 import type { Intent, Risk, WorkflowDefinition } from "./types";
 import { applyIntentRisk, resolveActiveSteps } from "./dispatcher";
 import type { GateResult } from "./types";
 import type { StepStatus, WorkflowRunState } from "./state";
 
 async function isLegacyWorkflow(projectRoot: string, workflowId: string): Promise<boolean> {
+  await loadWorkflow(projectRoot, workflowId);
   const list = await listWorkflows(projectRoot);
   const entry = list.find((w) => w.id === workflowId);
   if (!entry) {

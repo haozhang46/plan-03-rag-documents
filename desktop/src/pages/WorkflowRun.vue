@@ -21,7 +21,7 @@ import WorkflowSidebar from "../components/workflow/WorkflowSidebar.vue";
 import WorkflowTemplatePicker from "../components/workflow/WorkflowTemplatePicker.vue";
 import { getLegacyWorkspace } from "../workspace/legacyWorkspaces";
 import WorkflowPanelRenderer from "../workspace/WorkflowPanelRenderer.vue";
-import type { ChatFileAttachment, RuleFileEntry } from "../workspace/registryComponents";
+import type { ChatFileAttachment, RuleFileEntry, ArchitecturePlanWidgetType } from "../workspace/registryComponents";
 import type { WorkspaceDefinition } from "../workspace/registry";
 import { useWorkspaceApproval } from "../composables/useWorkspaceApproval";
 import { parsePendingWorkspaceApproval } from "../workspace/workspaceApproval";
@@ -111,6 +111,29 @@ async function persistRuleFiles(files: RuleFileEntry[], componentId: string) {
   fetchedWorkspace.value = await saveWorkspace(workflowId, stepId, updated);
 }
 
+async function persistArchitectureLayers(
+  layers: string[],
+  componentId: string,
+  widgetType: ArchitecturePlanWidgetType,
+) {
+  const workflowId = activeWorkflowId.value;
+  const stepId = activeStepId.value;
+  const workspace = fetchedWorkspace.value;
+  if (!workflowId || !stepId || !workspace) {
+    throw new Error("Workspace not loaded");
+  }
+
+  const updated: WorkspaceDefinition = {
+    ...workspace,
+    components: workspace.components.map((comp) =>
+      comp.id === componentId && comp.type === widgetType
+        ? { ...comp, props: { ...comp.props, layers } }
+        : comp,
+    ),
+  };
+  fetchedWorkspace.value = await saveWorkspace(workflowId, stepId, updated);
+}
+
 const fileWriteListeners = new Set<(path: string) => void>();
 
 function notifyFileWritten(path: string) {
@@ -137,6 +160,7 @@ const panelApi = {
   deleteWorkspacePath,
   addToChat: addFileToChat,
   persistRuleFiles,
+  persistArchitectureLayers,
   subscribeFileWrites: (fn) => {
     fileWriteListeners.add(fn);
     return () => fileWriteListeners.delete(fn);
@@ -632,6 +656,8 @@ async function onStepSend(payload: { text: string; attachments: ChatAttachment[]
   }
   const threadId = stepChatMemory.activeThreadId.value;
   if (!threadId) return;
+  const checkpointThreadId = stepChatMemory.threads.value.find((t) => t.id === threadId)?.checkpointThreadId;
+  if (!checkpointThreadId) return;
 
   let expanded: string;
   try {
@@ -669,7 +695,7 @@ async function onStepSend(payload: { text: string; attachments: ChatAttachment[]
         expanded,
         stepId,
         activeWorkflowId.value,
-        threadId,
+        checkpointThreadId,
         skills,
         "agent",
       );
@@ -952,6 +978,7 @@ async function onFreeSend(payload: { text: string; attachments: ChatAttachment[]
                 >
                   Chat with agent to run {{ currentStep?.title ?? "this step" }}.
                 </div>
+                <div v-if="running" class="text-gray-400 text-xs">Thinking…</div>
               </template>
               <template v-else>
                 <ChatMessage v-for="(msg, i) in freeChatMessages" :key="i" :msg="msg" />

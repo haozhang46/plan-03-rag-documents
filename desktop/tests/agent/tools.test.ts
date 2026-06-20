@@ -45,7 +45,7 @@ describe("desktop agent tools", () => {
     expect(names).toContain("ops_node_status");
     expect(names).toContain("workspace_get");
     expect(names).toContain("workspace_list_registry");
-    expect(names).toHaveLength(13);
+    expect(names).toHaveLength(12);
   });
 });
 

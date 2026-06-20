@@ -153,6 +153,37 @@ describe("agent server workflow API", () => {
     expect(state.currentStepId).toBe("prd");
   });
 
+  it("POST /v1/workflows/init materializes default workflow on empty project", async () => {
+    const emptyTmp = await fs.mkdtemp(path.join(os.tmpdir(), "af-empty-"));
+    const emptyServer = startAgentServer({
+      port: 0,
+      getApiKey: () => "test-key",
+      getWorkspaceRoot: () => emptyTmp,
+    });
+    const emptyPort = await listenPort(emptyServer);
+
+    const listBefore = await request(emptyPort, "GET", "/v1/workflows");
+    expect(listBefore.status).toBe(200);
+    const before = JSON.parse(listBefore.body) as { workflows: unknown[] };
+    expect(before.workflows).toHaveLength(0);
+
+    const initRes = await request(
+      emptyPort,
+      "POST",
+      "/v1/workflows/init",
+      JSON.stringify({ templateId: "default-dev-cicd" }),
+    );
+    expect(initRes.status).toBe(200);
+    const initBody = JSON.parse(initRes.body) as { workflowId: string };
+    expect(initBody.workflowId).toBe("default-dev-cicd");
+
+    const stateRes = await request(emptyPort, "GET", "/v1/workflow/state");
+    expect(stateRes.status).toBe(200);
+
+    emptyServer.close();
+    await fs.rm(emptyTmp, { recursive: true, force: true });
+  });
+
   it("GET /v1/resources/context returns resolved resources", async () => {
     const res = await request(port, "GET", "/v1/resources/context");
     expect(res.status).toBe(200);
@@ -202,8 +233,21 @@ describe("agent server workflow API", () => {
     expect(res.status).toBe(200);
     const data = JSON.parse(res.body) as {
       entries: Array<{ name: string; type: string }>;
+      exists: boolean;
     };
     expect(data.entries.some((e) => e.name === "PRD.md")).toBe(true);
+    expect(data.exists).toBe(true);
+  });
+
+  it("GET /v1/workspace/list returns empty entries when path missing", async () => {
+    const res = await request(port, "GET", "/v1/workspace/list?path=backend/migrations");
+    expect(res.status).toBe(200);
+    const data = JSON.parse(res.body) as {
+      entries: unknown[];
+      exists: boolean;
+    };
+    expect(data.entries).toEqual([]);
+    expect(data.exists).toBe(false);
   });
 
   it("PUT /v1/workspace/file writes and reads back", async () => {
