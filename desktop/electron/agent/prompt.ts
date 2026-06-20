@@ -30,6 +30,30 @@ const MODE_PREAMBLES: Record<ChatMode, string> = {
   ].join("\n"),
 };
 
+const FILE_CHAT_PREAMBLE = [
+  "You are editing specific project files attached by the user.",
+  "You may only read and write the allowed paths listed below.",
+  "Do not list directories, run shell commands, or modify other files.",
+  "If a file is empty or a stub, help the user initialize it through dialogue before writing.",
+].join("\n");
+
+export async function buildFileChatSystemPrompt(
+  allowedPaths: string[],
+  skillNames: string[] = [],
+): Promise<string> {
+  const parts: string[] = [
+    FILE_CHAT_PREAMBLE,
+    `Allowed paths:\n${allowedPaths.map((p) => `- ${p}`).join("\n")}`,
+  ];
+
+  if (skillNames.length > 0) {
+    const bodies = await loadSkillBodies(skillNames);
+    parts.push(...bodies);
+  }
+
+  return parts.filter(Boolean).join("\n\n---\n\n");
+}
+
 export async function buildChatSystemPrompt(
   mode: ChatMode,
   workspaceRoot: string,
@@ -51,4 +75,31 @@ export async function buildChatSystemPrompt(
   }
 
   return parts.filter(Boolean).join("\n\n---\n\n");
+}
+
+export async function buildStepChatSystemPrompt(
+  mode: ChatMode,
+  workspaceRoot: string,
+  stepId: string,
+  workflowId: string,
+  skillNames: string[] = [],
+): Promise<string> {
+  // 基础 system prompt
+  const basePrompt = await buildChatSystemPrompt(mode, workspaceRoot, skillNames);
+
+  // 读取 workflow 定义获取 step 信息
+  const workflowPath = path.join(workspaceRoot, ".agentflow", "workflows", `${workflowId}.json`);
+  let stepInfo = "";
+  try {
+    const workflowContent = await fs.readFile(workflowPath, "utf-8");
+    const workflow = JSON.parse(workflowContent) as { steps?: Array<{ id: string; title: string; prompt_template?: string }> };
+    const step = workflow.steps?.find((s) => s.id === stepId);
+    if (step) {
+      stepInfo = `\n\n## Current Step Context\n- Step ID: ${stepId}\n- Step Title: ${step.title}\n- Step Purpose: ${step.prompt_template ?? "Execute step tasks"}`;
+    }
+  } catch {
+    // workflow 文件不存在时忽略
+  }
+
+  return `${basePrompt}${stepInfo}\n\nWhen responding, consider the current step context and provide relevant assistance for this specific workflow step.`;
 }
