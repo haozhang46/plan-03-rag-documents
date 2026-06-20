@@ -281,20 +281,20 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
-    const url = req.url?.split("?")[0];
+    const pathname = req.url?.split("?")[0];
 
     if (
-      await handleLangflowRoutes(req, res, url ?? "", req.method ?? "GET", getWorkspaceRoot)
+      await handleLangflowRoutes(req, res, pathname ?? "", req.method ?? "GET", getWorkspaceRoot)
     ) {
       return;
     }
 
-    if (req.method === "GET" && url === "/health") {
+    if (req.method === "GET" && pathname === "/health") {
       jsonResponse(res, 200, { status: "ok", mode: "desktop-js" });
       return;
     }
 
-    if (req.method === "GET" && url === "/v1/health/deepseek") {
+    if (req.method === "GET" && pathname === "/v1/health/deepseek") {
       if (!syncAgent()) {
         jsonResponse(res, 400, { detail: "DEEPSEEK_API_KEY not set" });
         return;
@@ -309,7 +309,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
-    if (req.method === "GET" && url === "/v1/workflows") {
+    if (req.method === "GET" && pathname === "/v1/workflows") {
       try {
         const workspaceRoot = getWorkspaceRoot();
         const workflows = await listWorkflows(workspaceRoot);
@@ -335,7 +335,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
-    if (req.method === "GET" && url === "/v1/workflows/templates") {
+    if (req.method === "GET" && pathname === "/v1/workflows/templates") {
       try {
         const templates = await listTemplates();
         jsonResponse(res, 200, { templates });
@@ -346,7 +346,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
-    if (req.method === "POST" && url === "/v1/workspace/file-chat") {
+    if (req.method === "POST" && pathname === "/v1/workspace/file-chat") {
       let payload: {
         paths?: string[];
         message?: string;
@@ -423,7 +423,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
-    if (req.method === "POST" && url === "/v1/workflows/init") {
+    if (req.method === "POST" && pathname === "/v1/workflows/init") {
       let payload: { templateId?: string } = {};
       try {
         const body = await readBody(req);
@@ -447,7 +447,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
-    if (req.method === "POST" && url === "/v1/workflows/from-template") {
+    if (req.method === "POST" && pathname === "/v1/workflows/from-template") {
       let payload: { templateId?: string; newId?: string };
       try {
         payload = JSON.parse(await readBody(req));
@@ -617,7 +617,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
-    if (req.method === "GET" && url === "/v1/workflows/current") {
+    if (req.method === "GET" && pathname === "/v1/workflows/current") {
       try {
         const workflowId = workflowIdFromQuery(req.url);
         const workflow = await loadWorkflow(getWorkspaceRoot(), workflowId);
@@ -629,7 +629,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
-    if (req.method === "GET" && url === "/v1/workflow/dispatch") {
+    if (req.method === "GET" && pathname === "/v1/workflow/dispatch") {
       try {
         const workflowId = workflowIdFromQuery(req.url);
         const decision = await getDispatchDecision(
@@ -646,7 +646,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
-    if (req.method === "POST" && url === "/v1/workflow/intent") {
+    if (req.method === "POST" && pathname === "/v1/workflow/intent") {
       let payload: { intent?: string; risk?: string; workflowId?: string };
       try {
         payload = JSON.parse(await readBody(req));
@@ -679,7 +679,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
-    if (req.method === "POST" && url === "/v1/workflow/gates") {
+    if (req.method === "POST" && pathname === "/v1/workflow/gates") {
       let payload: { stepId?: string; workflowId?: string } = {};
       try {
         const raw = await readBody(req);
@@ -707,7 +707,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
-    if (req.method === "POST" && url === "/v1/eval/run") {
+    if (req.method === "POST" && pathname === "/v1/eval/run") {
       try {
         const workflowId = workflowIdFromQuery(req.url);
         const report = await runWorkflowEval(
@@ -724,7 +724,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
-    if (req.method === "POST" && url === "/v1/eval/compare") {
+    if (req.method === "POST" && pathname === "/v1/eval/compare") {
       let payload: { baseline?: unknown; candidate?: unknown };
       try {
         payload = JSON.parse(await readBody(req));
@@ -751,7 +751,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
-    if (req.method === "GET" && url === "/v1/workflow/state") {
+    if (req.method === "GET" && pathname === "/v1/workflow/state") {
       try {
         const workflowId = workflowIdFromQuery(req.url);
         const state = await getWorkflowState(
@@ -768,7 +768,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
-    if (req.method === "GET" && url === "/v1/resources/context") {
+    if (req.method === "GET" && pathname === "/v1/resources/context") {
       try {
         const context = await getResourceContext(getWorkspaceRoot(), getResourceServerUrl);
         jsonResponse(res, 200, context);
@@ -779,7 +779,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
-    if (req.method === "GET" && url === "/v1/resources/topology") {
+    if (req.method === "GET" && pathname === "/v1/resources/topology") {
       try {
         const context = await getResourceContext(getWorkspaceRoot(), getResourceServerUrl);
         jsonResponse(res, 200, { topology: context.topology });
@@ -790,7 +790,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
-    if (req.method === "GET" && url === "/v1/workspace/registry") {
+    if (req.method === "GET" && pathname === "/v1/workspace/registry") {
       jsonResponse(res, 200, { components: WORKSPACE_REGISTRY });
       return;
     }
@@ -828,7 +828,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
-    if (req.method === "PUT" && url === "/v1/workspace/file") {
+    if (req.method === "PUT" && pathname === "/v1/workspace/file") {
       let payload: { path?: string; content?: string };
       try {
         payload = JSON.parse(await readBody(req));
@@ -905,7 +905,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
-    if (req.method === "GET" && url === "/v1/workspace/deployment") {
+    if (req.method === "GET" && pathname === "/v1/workspace/deployment") {
       try {
         const config = await workspaceDeploymentConfig(getWorkspaceRoot(), getResourceServerUrl);
         jsonResponse(res, 200, config);
@@ -916,7 +916,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
-    if (req.method === "GET" && url === "/v1/workspace/ops/bootstrap") {
+    if (req.method === "GET" && pathname === "/v1/workspace/ops/bootstrap") {
       try {
         const bundle = await workspaceOpsBootstrap(getWorkspaceRoot(), getResourceServerUrl);
         jsonResponse(res, 200, bundle);
@@ -927,7 +927,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
-    if (req.method === "GET" && url === "/v1/workspace/ops") {
+    if (req.method === "GET" && pathname === "/v1/workspace/ops") {
       try {
         const bundle = await workspaceOpsLoad(getWorkspaceRoot());
         jsonResponse(res, 200, bundle);
@@ -938,7 +938,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
-    if (req.method === "PUT" && url === "/v1/workspace/ops") {
+    if (req.method === "PUT" && pathname === "/v1/workspace/ops") {
       let payload: { topology?: unknown; ops?: unknown };
       try {
         payload = JSON.parse(await readBody(req));
@@ -980,7 +980,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
-    if (req.method === "POST" && url === "/v1/workspace/ops/deploy") {
+    if (req.method === "POST" && pathname === "/v1/workspace/ops/deploy") {
       let payload: { nodeId?: string; deployAll?: boolean; confirm?: boolean };
       try {
         payload = JSON.parse(await readBody(req));
@@ -1011,7 +1011,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
-    if (req.method === "POST" && url === "/v1/workspace/ops/ssh/exec") {
+    if (req.method === "POST" && pathname === "/v1/workspace/ops/ssh/exec") {
       let payload: { hostRef?: string; command?: string };
       try {
         payload = JSON.parse(await readBody(req));
@@ -1050,7 +1050,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
-    if (req.method === "POST" && url === "/v1/workspace/ops/sync-server") {
+    if (req.method === "POST" && pathname === "/v1/workspace/ops/sync-server") {
       try {
         const result = await workspaceOpsSyncToServer(
           getWorkspaceRoot(),
@@ -1131,7 +1131,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
-    if (req.method === "POST" && url === "/v1/workspace/ops/logs/snapshot") {
+    if (req.method === "POST" && pathname === "/v1/workspace/ops/logs/snapshot") {
       let payload: { nodeId?: string };
       try {
         payload = JSON.parse(await readBody(req));
@@ -1153,7 +1153,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
-    if (req.method === "GET" && url === "/v1/skills") {
+    if (req.method === "GET" && pathname === "/v1/skills") {
       try {
         const detailed = parseQuery(req.url ?? "").get("detailed");
         if (detailed === "1") {
@@ -1170,7 +1170,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
-    if (req.method === "POST" && url === "/v1/workflow/advance") {
+    if (req.method === "POST" && pathname === "/v1/workflow/advance") {
       let payload: { action?: string; workflowId?: string };
       try {
         payload = JSON.parse(await readBody(req));
@@ -1201,7 +1201,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
-    if (req.method === "POST" && url === "/v1/workflow/compile") {
+    if (req.method === "POST" && pathname === "/v1/workflow/compile") {
       let payload: { langflowJson?: unknown };
       try {
         payload = JSON.parse(await readBody(req));
@@ -1242,7 +1242,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
-    if (req.method === "POST" && url === "/v1/workflow/run") {
+    if (req.method === "POST" && pathname === "/v1/workflow/run") {
       let payload: { stepId?: string; workflowId?: string } = {};
       try {
         const raw = await readBody(req);
@@ -1424,7 +1424,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       }
     }
 
-    if (req.method === "GET" && url === "/v1/chat-memory/threads") {
+    if (req.method === "GET" && pathname === "/v1/chat-memory/threads") {
       const projectRoot = requireProjectRoot(getWorkspaceRoot, res);
       if (!projectRoot) {
         return;
@@ -1446,7 +1446,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
-    if (req.method === "POST" && url === "/v1/chat-memory/threads") {
+    if (req.method === "POST" && pathname === "/v1/chat-memory/threads") {
       const projectRoot = requireProjectRoot(getWorkspaceRoot, res);
       if (!projectRoot) {
         return;
@@ -1476,18 +1476,7 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
-    if (req.method === "POST" && url === "/v1/chat") {
-      try {
-        if (!syncAgent()) {
-          jsonResponse(res, 400, { detail: "DEEPSEEK_API_KEY not set" });
-          return;
-        }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        jsonResponse(res, 500, { detail: `Agent initialization failed: ${message}` });
-        return;
-      }
-
+    if (req.method === "POST" && pathname === "/v1/chat") {
       let payload: {
         flow_id?: string;
         thread_id?: string;
@@ -1524,36 +1513,50 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
         Connection: "keep-alive",
       });
 
+      // Check if we can use DeepSeek, otherwise fallback to Claude Code
+      const hasDeepSeek = syncAgent();
+
       try {
-        const events = agentService.streamEvents(payload.thread_id, payload.message, {
-          mode,
-          skills: payload.skills,
-          stepId: payload.stepId,
-          workflowId: payload.workflowId,
-        });
-        for await (const event of events) {
-          if (event.event === "plan_ready") {
-            writeSse(res, "plan_ready", event.data ?? {});
-            continue;
-          }
-          if (event.event === "on_chat_model_stream") {
-            const chunk = event.data?.chunk as { content?: string } | undefined;
-            if (chunk?.content) {
-              writeSse(res, "message", { content: chunk.content });
+        if (hasDeepSeek) {
+          // Use DeepSeek via agentService
+          const events = agentService.streamEvents(payload.thread_id, payload.message, {
+            mode,
+            skills: payload.skills,
+            stepId: payload.stepId,
+            workflowId: payload.workflowId,
+          });
+          for await (const event of events) {
+            if (event.event === "plan_ready") {
+              writeSse(res, "plan_ready", event.data ?? {});
+              continue;
             }
-          } else if (event.event === "on_tool_start") {
-            writeSse(res, "tool_start", {
-              call_id: event.run_id ?? "",
-              name: event.name ?? "",
-            });
-          } else if (event.event === "on_tool_end") {
-            const output = formatToolOutput(event.data?.output);
-            writeSse(res, "tool_end", {
-              call_id: event.run_id ?? "",
-              name: event.name ?? "",
-              ok: true,
-              ...(output !== undefined ? { output } : {}),
-            });
+            if (event.event === "on_chat_model_stream") {
+              const chunk = event.data?.chunk as { content?: string } | undefined;
+              if (chunk?.content) {
+                writeSse(res, "message", { content: chunk.content });
+              }
+            } else if (event.event === "on_tool_start") {
+              writeSse(res, "tool_start", {
+                call_id: event.run_id ?? "",
+                name: event.name ?? "",
+              });
+            } else if (event.event === "on_tool_end") {
+              const output = formatToolOutput(event.data?.output);
+              writeSse(res, "tool_end", {
+                call_id: event.run_id ?? "",
+                name: event.name ?? "",
+                ok: true,
+                ...(output !== undefined ? { output } : {}),
+              });
+            }
+          }
+        } else {
+          // Fallback to Claude Code
+          logger.info("Using Claude Code fallback for chat", { thread_id: payload.thread_id });
+          const { claudeCodeStream } = await import("../executors/claudeCode");
+          const stream = claudeCodeStream(payload.message, getWorkspaceRoot());
+          for await (const chunk of stream) {
+            writeSse(res, "message", { content: chunk });
           }
         }
         writeSse(res, "done", {});

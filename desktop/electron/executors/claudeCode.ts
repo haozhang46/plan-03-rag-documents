@@ -54,3 +54,44 @@ export const claudeCodeExecutor: StepExecutor = {
     return runClaude(ctx);
   },
 };
+
+// Stream wrapper for chat fallback - yields content chunks directly
+export async function* claudeCodeStream(message: string, workspaceRoot: string): AsyncIterable<string> {
+  const child = spawn("claude", ["--print", message], {
+    cwd: workspaceRoot,
+    env: process.env,
+  });
+
+  let buffer = "";
+  let finished = false;
+  let wake: (() => void) | undefined;
+
+  child.stdout.on("data", (chunk: Buffer) => {
+    buffer += chunk.toString();
+    wake?.();
+  });
+
+  child.on("close", () => {
+    finished = true;
+    wake?.();
+  });
+
+  child.on("error", (err) => {
+    buffer += `\nError: ${err.message}`;
+    finished = true;
+    wake?.();
+  });
+
+  while (!finished || buffer.length > 0) {
+    if (buffer.length === 0) {
+      await new Promise<void>((resolve) => {
+        wake = resolve;
+      });
+      continue;
+    }
+    // Yield chunks of reasonable size for streaming
+    const chunk = buffer.slice(0, 100);
+    buffer = buffer.slice(100);
+    yield chunk;
+  }
+}
