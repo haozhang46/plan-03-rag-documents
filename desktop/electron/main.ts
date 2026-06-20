@@ -4,9 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import { startAgentServer } from "./agent/server";
 import { startExecutorServer } from "./executor/server";
+import { resolveRecursionLimit, setRecursionLimitCache } from "./agent/recursionLimit";
 import { clearApiKey, loadApiKey, saveApiKey } from "./settings/keychain";
-import { initProjectFromTemplate } from "./workflow/loader";
+import { loadSettings, saveSettings } from "./settings/store";
+import { ensureProjectWorkflow, initProjectFromTemplate } from "./workflow/loader";
 import { ensureLangflowRunning, stopLangflow } from "./langflow/manager";
+import { logger } from "./utils/logger";
 
 const AGENT_PORT = 8765;
 const EXECUTOR_PORT = 17351;
@@ -14,11 +17,19 @@ const MAX_RECENT = 10;
 
 const AGENTFLOW_DIR = path.join(os.homedir(), ".agentflow");
 const RECENT_FILE = path.join(AGENTFLOW_DIR, "recent.json");
-const SETTINGS_FILE = path.join(AGENTFLOW_DIR, "settings.json");
 
 let agentServer: ReturnType<typeof startAgentServer> | null = null;
 let workspaceRoot = process.cwd();
 let resourceServerUrl: string | null = null;
+
+process.on("uncaughtException", (err) => {
+  logger.error("Uncaught exception in main process", err);
+});
+
+process.on("unhandledRejection", (reason) => {
+  const error = reason instanceof Error ? reason : new Error(String(reason));
+  logger.error("Unhandled rejection in main process", error);
+});
 
 async function refreshResourceServerUrl(): Promise<void> {
   const settings = await loadSettings();
@@ -27,6 +38,7 @@ async function refreshResourceServerUrl(): Promise<void> {
 }
 
 function restartAgentServer(): void {
+  logger.info("Restarting agent server");
   if (agentServer) {
     agentServer.close();
     agentServer = null;
@@ -37,6 +49,7 @@ function restartAgentServer(): void {
     getWorkspaceRoot: () => workspaceRoot,
     getResourceServerUrl: () => resourceServerUrl,
   });
+  logger.info("Agent server restarted");
 }
 
 async function ensureAgentflowDir(): Promise<void> {
@@ -70,34 +83,19 @@ async function addRecentProject(dir: string): Promise<void> {
 
 async function openProject(dir: string): Promise<string> {
   workspaceRoot = path.resolve(dir);
+  try {
+    await ensureProjectWorkflow(workspaceRoot);
+  } catch (err) {
+    console.warn("[workflow] ensure on open failed:", err);
+  }
   await addRecentProject(workspaceRoot);
   restartAgentServer();
   return workspaceRoot;
 }
 
-type AgentflowSettings = {
-  resourceServerUrl?: string;
-  langflowBaseUrl?: string;
-  langflowApiKey?: string;
-  langflowAutoStart?: boolean;
-  langflowPort?: number;
-};
-
-async function loadSettings(): Promise<AgentflowSettings> {
-  try {
-    await ensureAgentflowDir();
-    const raw = await fs.readFile(SETTINGS_FILE, "utf8");
-    const parsed = JSON.parse(raw) as AgentflowSettings;
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-async function saveSettings(partial: AgentflowSettings): Promise<void> {
-  await ensureAgentflowDir();
-  const current = await loadSettings();
-  await fs.writeFile(SETTINGS_FILE, JSON.stringify({ ...current, ...partial }, null, 2));
+async function refreshRecursionLimitCache(): Promise<void> {
+  const settings = await loadSettings();
+  setRecursionLimitCache(resolveRecursionLimit(settings));
 }
 
 function createWindow(): BrowserWindow {
@@ -122,6 +120,7 @@ function createWindow(): BrowserWindow {
 
 app.whenReady().then(async () => {
   await refreshResourceServerUrl();
+  await refreshRecursionLimitCache();
   startExecutorServer(EXECUTOR_PORT);
   restartAgentServer();
   const settings = await loadSettings();
@@ -174,6 +173,23 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("settings:setLangflowAutoStart", async (_e, enabled: boolean) => {
     await saveSettings({ langflowAutoStart: enabled });
+    return true;
+  });
+  ipcMain.handle("settings:getAgentRecursionLimit", async () => {
+    const settings = await loadSettings();
+    const raw = settings.agentRecursionLimit;
+    if (raw === undefined || raw === null || raw === 0) {
+      return { unlimited: true as const, limit: null };
+    }
+    return { unlimited: false as const, limit: Math.max(1, Math.floor(raw)) };
+  });
+  ipcMain.handle("settings:setAgentRecursionLimit", async (_e, payload: { unlimited?: boolean; limit?: number }) => {
+    const unlimited = payload.unlimited !== false;
+    const agentRecursionLimit = unlimited
+      ? null
+      : Math.max(1, Math.floor(Number(payload.limit) || 1));
+    await saveSettings({ agentRecursionLimit });
+    await refreshRecursionLimitCache();
     return true;
   });
   ipcMain.handle("langflow:restart", async () => {
