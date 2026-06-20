@@ -285,10 +285,42 @@ Tools evaluated for adapter/UI integration (not vendored):
 | [OpenSRE](https://github.com/Tracer-Cloud/opensre) | Apache-2.0 | Production incident ops — out of scope for this spec |
 | [HolmesGPT](https://github.com/HolmesGPT/holmesgpt) | Apache-2.0 | Runtime troubleshooting — out of scope for this spec |
 
-## 12. Success Criteria
+## 12. Success Criteria (v1)
 
 - [x] Operator can define api → mysql → redis topology in Web UI without editing YAML by hand
 - [x] Desktop `cicd` step receives topology + instances in system prompt when Resource Server URL is set
 - [x] Compose file in project can be imported to Server and re-exported without data loss (services, depends_on, ports)
 - [x] Works with Resource Server URL empty (local-only fallback unchanged)
 - [x] No automatic production mutations in v1
+
+## 13. Ops Visualization Integration (v1.1)
+
+**Direction:** Primary ops visualization uses external tools, not the self-built `/ui` form editor.
+
+| Environment | Tool | Role |
+|-------------|------|------|
+| Docker VPS | [Portainer](https://www.portainer.io/) | Container/stack ops console |
+| Kubernetes | [Meshery / Kanvas](https://meshery.io/) | Cluster design + live ops |
+
+Resource Server remains the **adapter gateway** for Desktop and Chat:
+
+- Env-configured `RESOURCE_SERVER_PORTAINER_URL`, `RESOURCE_SERVER_PORTAINER_API_TOKEN`, `RESOURCE_SERVER_MESHERY_URL`
+- `GET /v1/ops/config` — public panel URLs (no tokens) for Desktop Settings links
+- `GET /v1/ops/summary?project=` — read-only aggregated runtime (stacks, connections) + intent topology node count
+- Adapters fail gracefully when unconfigured or unreachable
+
+**Desktop:**
+
+- CicdPanel **Runtime Ops** section shows Docker VPS + K8s summary cards
+- Settings links: Open Portainer, Open Meshery (when server reports URLs)
+- Self-built `/ui` link demoted to "Topology Editor (dev)" — not primary ops panel
+
+**Chat (v1 follow-up):** LangChain `topology_*` tools for intent topology; `ops_*` tools deferred to v1.2.
+
+### 13.1 Success Criteria (v1.1)
+
+- [x] Resource Server exposes `/v1/ops/config` and `/v1/ops/summary` with Portainer/Meshery adapters
+- [x] Desktop CicdPanel shows runtime ops summary when Resource Server URL is set
+- [x] Settings shows external ops panel links when configured on Resource Server
+- [x] Unconfigured ops adapters return `{ configured: false }` without breaking Desktop
+- [x] Chat `topology_*` tools work when Resource Server URL is set (Option B)

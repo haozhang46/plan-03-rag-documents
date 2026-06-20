@@ -14,6 +14,7 @@ const RECURSION_LIMIT = 25;
 export type AgentConfig = {
   apiKey: string;
   workspaceRoot: string;
+  resourceServerUrl?: string | null;
 };
 
 export type ChatStreamOptions = {
@@ -30,6 +31,7 @@ export class AgentService {
     const unchanged =
       this.config?.apiKey === config.apiKey &&
       this.config?.workspaceRoot === config.workspaceRoot &&
+      this.config?.resourceServerUrl === config.resourceServerUrl &&
       this.agents.size > 0;
     this.config = config;
     if (unchanged) return;
@@ -41,7 +43,10 @@ export class AgentService {
       configuration: { baseURL: DEEPSEEK_BASE_URL },
     });
 
-    const ctx = { workspaceRoot: config.workspaceRoot };
+    const ctx = {
+      workspaceRoot: config.workspaceRoot,
+      resourceServerUrl: config.resourceServerUrl,
+    };
     this.agents.clear();
     this.agents.set(
       "ask",

@@ -1,12 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { useWorkflow, type OpsConfig } from "../composables/useWorkflow";
 
 const emit = defineEmits<{ back: [] }>();
+
+const workflowApi = useWorkflow();
 
 const apiKeyStatus = ref("");
 const apiKeyInput = ref("");
 const resourceServerUrl = ref("");
 const workspacePath = ref("");
+const opsConfig = ref<OpsConfig | null>(null);
 const langflowBaseUrl = ref("");
 const langflowApiKeyStatus = ref("");
 const langflowApiKeyInput = ref("");
@@ -19,6 +23,14 @@ onMounted(async () => {
   langflowBaseUrl.value = await window.desktop.getLangflowBaseUrl();
   langflowApiKeyStatus.value = await window.desktop.getLangflowApiKeyStatus();
   langflowAutoStart.value = await window.desktop.getLangflowAutoStart();
+
+  if (resourceServerUrl.value.trim()) {
+    try {
+      opsConfig.value = await workflowApi.fetchOpsConfig();
+    } catch {
+      opsConfig.value = null;
+    }
+  }
 });
 
 async function saveApiKey() {
@@ -34,9 +46,17 @@ async function clearApiKey() {
 
 async function saveResourceServerUrl() {
   await window.desktop.setResourceServerUrl(resourceServerUrl.value);
+  opsConfig.value = null;
+  if (resourceServerUrl.value.trim()) {
+    try {
+      opsConfig.value = await workflowApi.fetchOpsConfig();
+    } catch {
+      opsConfig.value = null;
+    }
+  }
 }
 
-const topologyPanelUrl = computed(() => {
+const topologyEditorUrl = computed(() => {
   const base = resourceServerUrl.value.trim().replace(/\/$/, "");
   if (!base) return "";
   const project = workspacePath.value.split(/[/\\]/).filter(Boolean).pop() ?? "demo";
@@ -91,11 +111,44 @@ async function toggleLangflowAutoStart() {
         placeholder="http://localhost:9000"
       />
       <button class="btn-primary" @click="saveResourceServerUrl">Save URL</button>
-      <p v-if="topologyPanelUrl" class="text-sm mt-3">
-        <a :href="topologyPanelUrl" target="_blank" rel="noopener noreferrer" class="text-blue-600">
-          Open Topology Panel
-        </a>
-      </p>
+
+      <div v-if="resourceServerUrl.trim()" class="mt-4 space-y-2">
+        <p class="text-xs text-gray-500">
+          Ops panel URLs are configured on the Resource Server
+          (<code class="text-gray-600">RESOURCE_SERVER_PORTAINER_URL</code>,
+          <code class="text-gray-600">RESOURCE_SERVER_MESHERY_URL</code>).
+        </p>
+        <p v-if="opsConfig?.portainerUrl" class="text-sm">
+          <a
+            :href="opsConfig.portainerUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-blue-600"
+          >
+            Open Portainer (Docker VPS)
+          </a>
+        </p>
+        <p v-if="opsConfig?.mesheryUrl" class="text-sm">
+          <a
+            :href="opsConfig.mesheryUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-blue-600"
+          >
+            Open Meshery / Kanvas (Kubernetes)
+          </a>
+        </p>
+        <p v-if="topologyEditorUrl" class="text-sm">
+          <a
+            :href="topologyEditorUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-gray-600"
+          >
+            Topology Editor (dev)
+          </a>
+        </p>
+      </div>
     </section>
 
     <section>

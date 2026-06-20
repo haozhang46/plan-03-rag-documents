@@ -12,6 +12,12 @@ import {
 import { projectIdFromRoot } from "../resources/topology";
 import { readGateResults, readPhaseOutput } from "../workflow/phases";
 import { getResourceContext } from "../workflow/workflowService";
+import {
+  fetchOpsConfig,
+  fetchOpsSummary,
+  type OpsConfig,
+  type OpsSummary,
+} from "../resources/opsClient";
 
 export async function workspaceListDir(workspaceRoot: string, relPath: string) {
   return listDirEntries(workspaceRoot, relPath);
@@ -250,6 +256,27 @@ export async function workspaceDeploymentConfig(
     composeFile,
     workflowFiles,
   };
+}
+
+export async function workspaceOpsConfig(
+  getResourceServerUrl?: () => string | null,
+): Promise<OpsConfig | null> {
+  const serverUrl = getResourceServerUrl?.()?.trim();
+  if (!serverUrl) {
+    return null;
+  }
+  return fetchOpsConfig(serverUrl);
+}
+
+export async function workspaceOpsSummary(
+  workspaceRoot: string,
+  getResourceServerUrl?: () => string | null,
+): Promise<OpsSummary | null> {
+  const serverUrl = getResourceServerUrl?.()?.trim();
+  if (!serverUrl) {
+    return null;
+  }
+  return fetchOpsSummary(serverUrl, workspaceRoot);
 }
 
 export async function workspaceFileExists(workspaceRoot: string, relPath: string): Promise<boolean> {

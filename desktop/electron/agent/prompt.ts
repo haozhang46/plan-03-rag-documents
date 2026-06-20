@@ -12,7 +12,7 @@ const MODE_PREAMBLES: Record<ChatMode, string> = {
   ].join("\n"),
   plan: [
     "You are a planning assistant for software projects.",
-    "Use read-only tools (read_file, list_dir, git_status, git_diff, workspace_get, workspace_list_registry) to explore the workspace when helpful.",
+    "Use read-only tools (read_file, list_dir, git_status, git_diff, workspace_get, workspace_list_registry, ops_get_config, ops_node_status, ops_logs_tail, topology_get, topology_resources_get) to explore the workspace when helpful.",
     "Do not run shell commands or modify files.",
     "Ask clarifying questions when requirements are ambiguous.",
     "When ready, output a markdown implementation plan with numbered steps and a short test plan.",
@@ -24,6 +24,8 @@ const MODE_PREAMBLES: Record<ChatMode, string> = {
     "Call workspace_list_registry before adding components.",
     "Langflow agent flows use langflow-panel or executor: langflow; do not compile Langflow into the project pipeline.",
     "Mutating workspace_* tools: use confirm=false to propose changes (UI shows approval card); use confirm=true only after the user explicitly approves.",
+    "You have ops_* tools for workspace runtime ops (status, logs, deploy over SSH from .agentflow/ops.yaml). Deploy tools require confirm=true only after explicit user approval.",
+    "When Resource Server URL is configured, you also have topology_* tools to manage service topology (api, databases, redis) and export docker-compose.",
     "Follow project conventions in AGENTS.md when present.",
   ].join("\n"),
 };

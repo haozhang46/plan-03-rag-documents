@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
-import type { DeploymentConfig, Topology, useWorkflow } from "../../composables/useWorkflow";
+import type {
+  DeploymentConfig,
+  OpsSummary,
+  Topology,
+  useWorkflow,
+} from "../../composables/useWorkflow";
 
 type WorkflowApi = Pick<
   ReturnType<typeof useWorkflow>,
-  "fetchDeploymentConfig" | "fetchResourceContext" | "fetchTopology" | "readWorkspaceFile"
+  "fetchDeploymentConfig" | "fetchResourceContext" | "fetchTopology" | "fetchOpsSummary" | "readWorkspaceFile"
 >;
 
 const props = defineProps<{ api: WorkflowApi }>();
@@ -12,6 +17,7 @@ const props = defineProps<{ api: WorkflowApi }>();
 const config = ref<DeploymentConfig | null>(null);
 const resourceMarkdown = ref("");
 const topology = ref<Topology | null>(null);
+const opsSummary = ref<OpsSummary | null>(null);
 const composeContent = ref<string | null>(null);
 const loading = ref(false);
 const error = ref<string | null>(null);
@@ -26,14 +32,16 @@ async function load() {
   loading.value = true;
   error.value = null;
   try {
-    const [deploy, resources, topo] = await Promise.all([
+    const [deploy, resources, topo, ops] = await Promise.all([
       props.api.fetchDeploymentConfig(),
       props.api.fetchResourceContext(),
       props.api.fetchTopology(),
+      props.api.fetchOpsSummary(),
     ]);
     config.value = deploy;
     resourceMarkdown.value = resources.markdown;
     topology.value = topo.topology;
+    opsSummary.value = ops;
 
     if (deploy.composeFile) {
       try {
@@ -72,6 +80,60 @@ onMounted(() => {
     </div>
 
     <template v-else-if="config">
+      <section
+        v-if="opsSummary && (opsSummary.docker.configured || opsSummary.kubernetes.configured)"
+        class="p-4 border-b border-gray-100"
+      >
+        <h3 class="text-xs font-semibold text-gray-600 mb-2">Runtime Ops</h3>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div v-if="opsSummary.docker.configured" class="card p-3">
+            <p class="text-[10px] uppercase text-gray-500 mb-1">Docker VPS (Portainer)</p>
+            <p
+              class="text-sm font-medium"
+              :class="opsSummary.docker.reachable ? 'text-green-700' : 'text-amber-700'"
+            >
+              {{ opsSummary.docker.reachable ? "Connected" : "Unreachable" }}
+            </p>
+            <p v-if="opsSummary.docker.stackCount != null" class="text-xs text-gray-600 mt-1">
+              Stacks: {{ opsSummary.docker.stackCount }}
+            </p>
+            <p
+              v-if="opsSummary.docker.runningContainers != null"
+              class="text-xs text-gray-600"
+            >
+              Running containers: {{ opsSummary.docker.runningContainers }}
+            </p>
+            <p v-if="opsSummary.docker.error" class="text-xs text-red-600 mt-1">
+              {{ opsSummary.docker.error }}
+            </p>
+          </div>
+          <div v-if="opsSummary.kubernetes.configured" class="card p-3">
+            <p class="text-[10px] uppercase text-gray-500 mb-1">Kubernetes (Meshery)</p>
+            <p
+              class="text-sm font-medium"
+              :class="opsSummary.kubernetes.reachable ? 'text-green-700' : 'text-amber-700'"
+            >
+              {{ opsSummary.kubernetes.reachable ? "Connected" : "Unreachable" }}
+            </p>
+            <p v-if="opsSummary.kubernetes.version" class="text-xs text-gray-600 mt-1">
+              Version: {{ opsSummary.kubernetes.version }}
+            </p>
+            <p
+              v-if="opsSummary.kubernetes.connectionCount != null"
+              class="text-xs text-gray-600"
+            >
+              Connections: {{ opsSummary.kubernetes.connectionCount }}
+            </p>
+            <p v-if="opsSummary.kubernetes.error" class="text-xs text-red-600 mt-1">
+              {{ opsSummary.kubernetes.error }}
+            </p>
+          </div>
+        </div>
+        <p v-if="opsSummary.intentNodeCount != null" class="text-xs text-gray-500 mt-2">
+          Intent topology nodes: {{ opsSummary.intentNodeCount }}
+        </p>
+      </section>
+
       <section class="p-4 border-b border-gray-100 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div class="card p-3">
           <p class="text-[10px] uppercase text-gray-500 mb-1">Platform</p>

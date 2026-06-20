@@ -1,10 +1,13 @@
 import http from "node:http";
 import { ZodError } from "zod";
 import { agentService, type ChatMode } from "./agentService";
+import { formatToolOutput } from "./toolEvents";
+import { streamFileChat } from "./fileChatService";
 import { listSkillCatalog, listSkills } from "../skills/loader";
 import {
   createWorkflowFromTemplate,
   deleteWorkflow,
+  ensureProjectWorkflow,
   getActiveWorkflowId,
   listTemplates,
   listWorkflows,
@@ -45,6 +48,37 @@ import {
   workspacePath,
 } from "../workflow/workspaceLoader";
 import { WORKSPACE_REGISTRY } from "../workflow/workspaceRegistry";
+import {
+  workspaceOpsBootstrap,
+  workspaceOpsBundleForStream,
+  workspaceOpsDeployAll,
+  workspaceOpsDeployNode,
+  workspaceOpsLoad,
+  workspaceOpsLogFiles,
+  workspaceOpsLogRead,
+  workspaceOpsLogSnapshot,
+  workspaceOpsNodeStatus,
+  workspaceOpsSave,
+  workspaceOpsSshExec,
+  workspaceOpsStartLogStream,
+  workspaceOpsAudit,
+  workspaceOpsSyncToServer,
+} from "../workspace/opsService";
+import { appendOpsAudit } from "../resources/opsAudit";
+import {
+  createThread,
+  deleteThread,
+  listThreads,
+  loadThread,
+  saveMessages,
+  updateThreadMeta,
+} from "../chatMemory/service";
+import type {
+  ChatMessage,
+  ChatThreadMeta,
+  CreateThreadInput,
+  ThreadScope,
+} from "../chatMemory/types";
 
 export type AgentServerOptions = {
   port: number;
@@ -110,6 +144,87 @@ function isFileNotFound(err: unknown): boolean {
   );
 }
 
+function requireProjectRoot(
+  getWorkspaceRoot: () => string,
+  res: http.ServerResponse,
+): string | null {
+  const projectRoot = getWorkspaceRoot().trim();
+  if (!projectRoot) {
+    jsonResponse(res, 400, { detail: "workspace not set" });
+    return null;
+  }
+  return projectRoot;
+}
+
+function parseScopeFromQuery(
+  query: URLSearchParams,
+): { scope: ThreadScope } | { error: string } {
+  const scopeVal = query.get("scope")?.trim();
+  if (scopeVal === "app") {
+    return { scope: { scope: "app" } };
+  }
+  if (scopeVal === "free") {
+    const workflowId = query.get("workflowId")?.trim();
+    if (!workflowId) {
+      return { error: "workflowId required for free scope" };
+    }
+    return { scope: { scope: "free", workflowId } };
+  }
+  if (scopeVal === "step") {
+    const workflowId = query.get("workflowId")?.trim();
+    const stepId = query.get("stepId")?.trim();
+    if (!workflowId) {
+      return { error: "workflowId required for step scope" };
+    }
+    if (!stepId) {
+      return { error: "stepId required for step scope" };
+    }
+    return { scope: { scope: "step", workflowId, stepId } };
+  }
+  return { error: "scope must be app, free, or step" };
+}
+
+function parseCreateThreadBody(body: unknown): CreateThreadInput | { error: string } {
+  if (!body || typeof body !== "object") {
+    return { error: "scope required" };
+  }
+  const payload = body as Record<string, unknown>;
+  const scope = payload.scope;
+  const title = typeof payload.title === "string" ? payload.title : undefined;
+
+  if (scope === "app") {
+    const input: CreateThreadInput = { scope: "app", title };
+    if (payload.mode === "ask" || payload.mode === "plan" || payload.mode === "agent") {
+      input.mode = payload.mode;
+    }
+    if (Array.isArray(payload.skills)) {
+      input.skills = payload.skills.filter((s): s is string => typeof s === "string");
+    }
+    return input;
+  }
+  if (scope === "free") {
+    const workflowId =
+      typeof payload.workflowId === "string" ? payload.workflowId.trim() : "";
+    if (!workflowId) {
+      return { error: "workflowId required for free scope" };
+    }
+    return { scope: "free", workflowId, title };
+  }
+  if (scope === "step") {
+    const workflowId =
+      typeof payload.workflowId === "string" ? payload.workflowId.trim() : "";
+    const stepId = typeof payload.stepId === "string" ? payload.stepId.trim() : "";
+    if (!workflowId) {
+      return { error: "workflowId required for step scope" };
+    }
+    if (!stepId) {
+      return { error: "stepId required for step scope" };
+    }
+    return { scope: "step", workflowId, stepId, title };
+  }
+  return { error: "scope must be app, free, or step" };
+}
+
 export function startAgentServer(options: AgentServerOptions): http.Server {
   const { port, getApiKey, getWorkspaceRoot, getResourceServerUrl } = options;
 
@@ -119,13 +234,18 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       agentService.clear();
       return false;
     }
-    agentService.configure({ apiKey, workspaceRoot: getWorkspaceRoot() });
+    agentService.configure({
+      apiKey,
+      workspaceRoot: getWorkspaceRoot(),
+      projectRoot: getWorkspaceRoot(),
+      resourceServerUrl: getResourceServerUrl?.() ?? null,
+    });
     return true;
   }
 
   const server = http.createServer(async (req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
     if (req.method === "OPTIONS") {
@@ -166,7 +286,14 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       try {
         const workspaceRoot = getWorkspaceRoot();
         const workflows = await listWorkflows(workspaceRoot);
-        const activeWorkflowId = await getActiveWorkflowId(workspaceRoot);
+        let activeWorkflowId: string | null = null;
+        if (workflows.length > 0) {
+          try {
+            activeWorkflowId = await getActiveWorkflowId(workspaceRoot);
+          } catch {
+            activeWorkflowId = workflows[0].id;
+          }
+        }
         jsonResponse(res, 200, {
           workflows: workflows.map((w) => ({
             ...w,
@@ -185,6 +312,107 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       try {
         const templates = await listTemplates();
         jsonResponse(res, 200, { templates });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        jsonResponse(res, 500, { detail: message });
+      }
+      return;
+    }
+
+    if (req.method === "POST" && url === "/v1/workspace/file-chat") {
+      let payload: {
+        paths?: string[];
+        message?: string;
+        skills?: string[];
+        stepId?: string;
+        threadId?: string;
+        workflowId?: string;
+      } = {};
+      try {
+        const raw = await readBody(req);
+        if (raw.trim()) {
+          payload = JSON.parse(raw) as typeof payload;
+        }
+      } catch {
+        jsonResponse(res, 400, { detail: "invalid JSON" });
+        return;
+      }
+
+      const paths = (payload.paths ?? []).map((p) => p.trim()).filter(Boolean);
+      if (!paths.length) {
+        jsonResponse(res, 400, { detail: "paths required" });
+        return;
+      }
+
+      const threadId = payload.threadId?.trim();
+      if (!threadId) {
+        jsonResponse(res, 400, { detail: "threadId required" });
+        return;
+      }
+
+      const apiKey = getApiKey();
+      if (!apiKey) {
+        jsonResponse(res, 400, { detail: "DEEPSEEK_API_KEY not set" });
+        return;
+      }
+
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      });
+
+      try {
+        const workspaceRoot = getWorkspaceRoot();
+        let workflowId = payload.workflowId?.trim();
+        if (!workflowId) {
+          try {
+            workflowId = await getActiveWorkflowId(workspaceRoot);
+          } catch {
+            workflowId = "unknown";
+          }
+        }
+        const stepId = payload.stepId?.trim() ?? "";
+        const checkpointThreadId = `file:${workflowId}:${stepId}:${threadId}`;
+        const events = streamFileChat({
+          workspaceRoot,
+          projectRoot: workspaceRoot,
+          paths,
+          message: payload.message ?? "",
+          skills: payload.skills,
+          stepId: payload.stepId,
+          checkpointThreadId,
+          apiKey,
+        });
+        for await (const event of events) {
+          writeSse(res, event.type, event);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        writeSse(res, "message", { type: "message", content: `Error: ${message}` });
+        writeSse(res, "done", { type: "done" });
+      }
+      res.end();
+      return;
+    }
+
+    if (req.method === "POST" && url === "/v1/workflows/init") {
+      let payload: { templateId?: string } = {};
+      try {
+        const body = await readBody(req);
+        if (body.trim()) {
+          payload = JSON.parse(body) as { templateId?: string };
+        }
+      } catch {
+        jsonResponse(res, 400, { detail: "invalid JSON" });
+        return;
+      }
+      const templateId = payload.templateId?.trim() || "default-dev-cicd";
+      try {
+        const workspaceRoot = getWorkspaceRoot();
+        const workflowId = await ensureProjectWorkflow(workspaceRoot, templateId);
+        clearRunner(workspaceRoot);
+        jsonResponse(res, 200, { workflowId, templateId });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         jsonResponse(res, 500, { detail: message });
@@ -661,6 +889,243 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
+    if (req.method === "GET" && url === "/v1/workspace/ops/bootstrap") {
+      try {
+        const bundle = await workspaceOpsBootstrap(getWorkspaceRoot(), getResourceServerUrl);
+        jsonResponse(res, 200, bundle);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        jsonResponse(res, 500, { detail: message });
+      }
+      return;
+    }
+
+    if (req.method === "GET" && url === "/v1/workspace/ops") {
+      try {
+        const bundle = await workspaceOpsLoad(getWorkspaceRoot());
+        jsonResponse(res, 200, bundle);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        jsonResponse(res, 500, { detail: message });
+      }
+      return;
+    }
+
+    if (req.method === "PUT" && url === "/v1/workspace/ops") {
+      let payload: { topology?: unknown; ops?: unknown };
+      try {
+        payload = JSON.parse(await readBody(req));
+      } catch {
+        jsonResponse(res, 400, { detail: "invalid JSON" });
+        return;
+      }
+      if (!payload.topology || !payload.ops) {
+        jsonResponse(res, 400, { detail: "topology and ops required" });
+        return;
+      }
+      try {
+        const result = await workspaceOpsSave(
+          getWorkspaceRoot(),
+          payload.topology as Parameters<typeof workspaceOpsSave>[1],
+          payload.ops as Parameters<typeof workspaceOpsSave>[2],
+        );
+        jsonResponse(res, 200, result);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        jsonResponse(res, 500, { detail: message });
+      }
+      return;
+    }
+
+    if (req.method === "GET" && url?.startsWith("/v1/workspace/ops/status")) {
+      const nodeId = parseQuery(req.url ?? "").get("nodeId");
+      if (!nodeId?.trim()) {
+        jsonResponse(res, 400, { detail: "nodeId required" });
+        return;
+      }
+      try {
+        const result = await workspaceOpsNodeStatus(getWorkspaceRoot(), nodeId.trim());
+        jsonResponse(res, 200, result);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        jsonResponse(res, 500, { detail: message });
+      }
+      return;
+    }
+
+    if (req.method === "POST" && url === "/v1/workspace/ops/deploy") {
+      let payload: { nodeId?: string; deployAll?: boolean; confirm?: boolean };
+      try {
+        payload = JSON.parse(await readBody(req));
+      } catch {
+        jsonResponse(res, 400, { detail: "invalid JSON" });
+        return;
+      }
+      if (!payload.confirm) {
+        jsonResponse(res, 400, { detail: "confirm required" });
+        return;
+      }
+      try {
+        if (payload.deployAll) {
+          const result = await workspaceOpsDeployAll(getWorkspaceRoot());
+          jsonResponse(res, 200, result);
+          return;
+        }
+        if (!payload.nodeId?.trim()) {
+          jsonResponse(res, 400, { detail: "nodeId or deployAll required" });
+          return;
+        }
+        const result = await workspaceOpsDeployNode(getWorkspaceRoot(), payload.nodeId.trim());
+        jsonResponse(res, 200, result);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        jsonResponse(res, 500, { detail: message });
+      }
+      return;
+    }
+
+    if (req.method === "POST" && url === "/v1/workspace/ops/ssh/exec") {
+      let payload: { hostRef?: string; command?: string };
+      try {
+        payload = JSON.parse(await readBody(req));
+      } catch {
+        jsonResponse(res, 400, { detail: "invalid JSON" });
+        return;
+      }
+      if (!payload.hostRef?.trim() || !payload.command?.trim()) {
+        jsonResponse(res, 400, { detail: "hostRef and command required" });
+        return;
+      }
+      try {
+        const result = await workspaceOpsSshExec(
+          getWorkspaceRoot(),
+          payload.hostRef.trim(),
+          payload.command.trim(),
+        );
+        jsonResponse(res, 200, result);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        jsonResponse(res, 500, { detail: message });
+      }
+      return;
+    }
+
+    if (req.method === "GET" && url?.startsWith("/v1/workspace/ops/audit")) {
+      const limitRaw = parseQuery(req.url ?? "").get("limit");
+      const limit = limitRaw ? Number(limitRaw) : undefined;
+      try {
+        const result = await workspaceOpsAudit(getWorkspaceRoot(), limit);
+        jsonResponse(res, 200, result);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        jsonResponse(res, 500, { detail: message });
+      }
+      return;
+    }
+
+    if (req.method === "POST" && url === "/v1/workspace/ops/sync-server") {
+      try {
+        const result = await workspaceOpsSyncToServer(
+          getWorkspaceRoot(),
+          getResourceServerUrl?.() ?? null,
+        );
+        jsonResponse(res, 200, result);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        jsonResponse(res, 500, { detail: message });
+      }
+      return;
+    }
+
+    if (req.method === "GET" && url?.startsWith("/v1/workspace/ops/logs/stream")) {
+      const nodeId = parseQuery(req.url ?? "").get("nodeId");
+      if (!nodeId?.trim()) {
+        jsonResponse(res, 400, { detail: "nodeId required" });
+        return;
+      }
+      try {
+        const { bundle, node } = await workspaceOpsBundleForStream(getWorkspaceRoot(), nodeId.trim());
+        res.writeHead(200, {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        });
+        const stream = workspaceOpsStartLogStream(node, bundle.ops, (text) => {
+          writeSse(res, "log", { text });
+        });
+        if (stream.error) {
+          writeSse(res, "error", { message: stream.error });
+          writeSse(res, "done", {});
+          res.end();
+          return;
+        }
+        void appendOpsAudit(getWorkspaceRoot(), {
+          ts: new Date().toISOString(),
+          node: nodeId.trim(),
+          action: "logsFollowStart",
+        });
+        req.on("close", () => {
+          stream.close();
+          void appendOpsAudit(getWorkspaceRoot(), {
+            ts: new Date().toISOString(),
+            node: nodeId.trim(),
+            action: "logsFollowEnd",
+          });
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (!res.headersSent) {
+          jsonResponse(res, 500, { detail: message });
+        } else {
+          writeSse(res, "error", { message });
+          writeSse(res, "done", {});
+          res.end();
+        }
+      }
+      return;
+    }
+
+    if (req.method === "GET" && url?.startsWith("/v1/workspace/ops/logs")) {
+      const query = parseQuery(req.url ?? "");
+      const nodeId = query.get("nodeId") ?? undefined;
+      const filePath = query.get("path");
+      try {
+        if (filePath) {
+          const data = await workspaceOpsLogRead(getWorkspaceRoot(), filePath);
+          jsonResponse(res, 200, data);
+          return;
+        }
+        const files = await workspaceOpsLogFiles(getWorkspaceRoot(), nodeId);
+        jsonResponse(res, 200, { files });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        jsonResponse(res, 500, { detail: message });
+      }
+      return;
+    }
+
+    if (req.method === "POST" && url === "/v1/workspace/ops/logs/snapshot") {
+      let payload: { nodeId?: string };
+      try {
+        payload = JSON.parse(await readBody(req));
+      } catch {
+        jsonResponse(res, 400, { detail: "invalid JSON" });
+        return;
+      }
+      if (!payload.nodeId?.trim()) {
+        jsonResponse(res, 400, { detail: "nodeId required" });
+        return;
+      }
+      try {
+        const result = await workspaceOpsLogSnapshot(getWorkspaceRoot(), payload.nodeId.trim());
+        jsonResponse(res, 200, result);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        jsonResponse(res, 500, { detail: message });
+      }
+      return;
+    }
+
     if (req.method === "GET" && url === "/v1/skills") {
       try {
         const detailed = parseQuery(req.url ?? "").get("detailed");
@@ -788,6 +1253,202 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
       return;
     }
 
+    const chatMemoryMessagesMatch = url?.match(
+      /^\/v1\/chat-memory\/threads\/([^/]+)\/messages$/,
+    );
+    if (req.method === "PUT" && chatMemoryMessagesMatch) {
+      const threadId = decodeURIComponent(chatMemoryMessagesMatch[1]);
+      const projectRoot = requireProjectRoot(getWorkspaceRoot, res);
+      if (!projectRoot) {
+        return;
+      }
+
+      const scopeResult = parseScopeFromQuery(parseQuery(req.url ?? ""));
+      if ("error" in scopeResult) {
+        jsonResponse(res, 400, { detail: scopeResult.error });
+        return;
+      }
+
+      let payload: { messages?: unknown };
+      try {
+        payload = JSON.parse(await readBody(req));
+      } catch {
+        jsonResponse(res, 400, { detail: "invalid JSON" });
+        return;
+      }
+      if (!Array.isArray(payload.messages)) {
+        jsonResponse(res, 400, { detail: "messages array required" });
+        return;
+      }
+
+      try {
+        await saveMessages(
+          projectRoot,
+          { ...scopeResult.scope, threadId },
+          payload.messages as ChatMessage[],
+        );
+        jsonResponse(res, 200, { ok: true });
+      } catch (err) {
+        if (isFileNotFound(err)) {
+          jsonResponse(res, 404, { detail: "thread not found" });
+          return;
+        }
+        const message = err instanceof Error ? err.message : String(err);
+        jsonResponse(res, 500, { detail: message });
+      }
+      return;
+    }
+
+    const chatMemoryThreadMatch = url?.match(/^\/v1\/chat-memory\/threads\/([^/]+)$/);
+    if (chatMemoryThreadMatch) {
+      const threadId = decodeURIComponent(chatMemoryThreadMatch[1]);
+      const projectRoot = requireProjectRoot(getWorkspaceRoot, res);
+      if (!projectRoot) {
+        return;
+      }
+
+      const scopeResult = parseScopeFromQuery(parseQuery(req.url ?? ""));
+      if ("error" in scopeResult) {
+        jsonResponse(res, 400, { detail: scopeResult.error });
+        return;
+      }
+
+      if (req.method === "GET") {
+        try {
+          const thread = await loadThread(projectRoot, {
+            ...scopeResult.scope,
+            threadId,
+          });
+          jsonResponse(res, 200, thread);
+        } catch (err) {
+          if (isFileNotFound(err)) {
+            jsonResponse(res, 404, { detail: "thread not found" });
+            return;
+          }
+          const message = err instanceof Error ? err.message : String(err);
+          jsonResponse(res, 500, { detail: message });
+        }
+        return;
+      }
+
+      if (req.method === "PATCH") {
+        let payload: { title?: unknown; mode?: unknown; skills?: unknown };
+        try {
+          payload = JSON.parse(await readBody(req));
+        } catch {
+          jsonResponse(res, 400, { detail: "invalid JSON" });
+          return;
+        }
+
+        const patch: Partial<Pick<ChatThreadMeta, "title" | "mode" | "skills">> = {};
+        if (payload.title !== undefined) {
+          if (typeof payload.title !== "string") {
+            jsonResponse(res, 400, { detail: "title must be a string" });
+            return;
+          }
+          patch.title = payload.title;
+        }
+        if (payload.mode !== undefined) {
+          if (payload.mode !== "ask" && payload.mode !== "plan" && payload.mode !== "agent") {
+            jsonResponse(res, 400, { detail: "mode must be ask, plan, or agent" });
+            return;
+          }
+          patch.mode = payload.mode;
+        }
+        if (payload.skills !== undefined) {
+          if (!Array.isArray(payload.skills)) {
+            jsonResponse(res, 400, { detail: "skills must be an array" });
+            return;
+          }
+          patch.skills = payload.skills.filter((s): s is string => typeof s === "string");
+        }
+
+        try {
+          const meta = await updateThreadMeta(
+            projectRoot,
+            { ...scopeResult.scope, threadId },
+            patch,
+          );
+          jsonResponse(res, 200, meta);
+        } catch (err) {
+          if (isFileNotFound(err)) {
+            jsonResponse(res, 404, { detail: "thread not found" });
+            return;
+          }
+          const message = err instanceof Error ? err.message : String(err);
+          jsonResponse(res, 500, { detail: message });
+        }
+        return;
+      }
+
+      if (req.method === "DELETE") {
+        try {
+          await deleteThread(projectRoot, { ...scopeResult.scope, threadId });
+          jsonResponse(res, 200, { ok: true });
+        } catch (err) {
+          if (isFileNotFound(err)) {
+            jsonResponse(res, 404, { detail: "thread not found" });
+            return;
+          }
+          const message = err instanceof Error ? err.message : String(err);
+          jsonResponse(res, 500, { detail: message });
+        }
+        return;
+      }
+    }
+
+    if (req.method === "GET" && url === "/v1/chat-memory/threads") {
+      const projectRoot = requireProjectRoot(getWorkspaceRoot, res);
+      if (!projectRoot) {
+        return;
+      }
+
+      const scopeResult = parseScopeFromQuery(parseQuery(req.url ?? ""));
+      if ("error" in scopeResult) {
+        jsonResponse(res, 400, { detail: scopeResult.error });
+        return;
+      }
+
+      try {
+        const threads = await listThreads(projectRoot, scopeResult.scope);
+        jsonResponse(res, 200, threads);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        jsonResponse(res, 500, { detail: message });
+      }
+      return;
+    }
+
+    if (req.method === "POST" && url === "/v1/chat-memory/threads") {
+      const projectRoot = requireProjectRoot(getWorkspaceRoot, res);
+      if (!projectRoot) {
+        return;
+      }
+
+      let body: unknown;
+      try {
+        body = JSON.parse(await readBody(req));
+      } catch {
+        jsonResponse(res, 400, { detail: "invalid JSON" });
+        return;
+      }
+
+      const input = parseCreateThreadBody(body);
+      if ("error" in input) {
+        jsonResponse(res, 400, { detail: input.error });
+        return;
+      }
+
+      try {
+        const meta = await createThread(projectRoot, input);
+        jsonResponse(res, 201, meta);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        jsonResponse(res, 500, { detail: message });
+      }
+      return;
+    }
+
     if (req.method === "POST" && url === "/v1/chat") {
       if (!syncAgent()) {
         jsonResponse(res, 400, { detail: "DEEPSEEK_API_KEY not set" });
@@ -800,6 +1461,8 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
         message?: string;
         mode?: string;
         skills?: string[];
+        stepId?: string;
+        workflowId?: string;
       };
       try {
         payload = JSON.parse(await readBody(req));
@@ -832,6 +1495,8 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
         const events = agentService.streamEvents(payload.thread_id, payload.message, {
           mode,
           skills: payload.skills,
+          stepId: payload.stepId,
+          workflowId: payload.workflowId,
         });
         for await (const event of events) {
           if (event.event === "plan_ready") {
@@ -849,10 +1514,12 @@ export function startAgentServer(options: AgentServerOptions): http.Server {
               name: event.name ?? "",
             });
           } else if (event.event === "on_tool_end") {
+            const output = formatToolOutput(event.data?.output);
             writeSse(res, "tool_end", {
               call_id: event.run_id ?? "",
               name: event.name ?? "",
               ok: true,
+              ...(output !== undefined ? { output } : {}),
             });
           }
         }

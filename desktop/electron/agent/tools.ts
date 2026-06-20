@@ -1,6 +1,12 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { runDesktopTool, type DesktopToolContext } from "../executor/runTool";
+import { buildOpsLangChainTools, buildReadOnlyOpsTools, type OpsToolContext } from "./opsTools";
+import {
+  buildReadOnlyTopologyTools,
+  buildTopologyLangChainTools,
+  type TopologyToolContext,
+} from "./topologyTools";
 import {
   buildReadOnlyWorkspaceTools,
   buildWorkspaceLangChainTools,
@@ -8,9 +14,21 @@ import {
 } from "./workspaceTools";
 
 export type AgentToolContext = DesktopToolContext & {
+  resourceServerUrl?: string | null;
   workflowId?: string | null;
   stepId?: string | null;
 };
+
+function toTopologyContext(ctx: AgentToolContext): TopologyToolContext {
+  return {
+    workspaceRoot: ctx.workspaceRoot,
+    resourceServerUrl: ctx.resourceServerUrl,
+  };
+}
+
+function toOpsContext(ctx: AgentToolContext): OpsToolContext {
+  return { workspaceRoot: ctx.workspaceRoot };
+}
 
 function toWorkspaceContext(ctx: AgentToolContext): WorkspaceToolContext {
   return {
@@ -24,6 +42,8 @@ export function buildDesktopLangChainTools(ctx: AgentToolContext) {
   return [
     ...buildBaseDesktopTools(ctx),
     ...buildWorkspaceLangChainTools(toWorkspaceContext(ctx)),
+    ...buildOpsLangChainTools(toOpsContext(ctx)),
+    ...buildTopologyLangChainTools(toTopologyContext(ctx)),
   ];
 }
 
@@ -33,6 +53,8 @@ export function buildReadOnlyDesktopTools(ctx: AgentToolContext) {
       ["read_file", "list_dir", "git_status", "git_diff"].includes(t.name),
     ),
     ...buildReadOnlyWorkspaceTools(toWorkspaceContext(ctx)),
+    ...buildReadOnlyOpsTools(toOpsContext(ctx)),
+    ...buildReadOnlyTopologyTools(toTopologyContext(ctx)),
   ];
 }
 

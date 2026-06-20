@@ -75,6 +75,34 @@ export interface DeploymentConfig {
   workflowFiles: string[];
 }
 
+export interface OpsConfig {
+  portainerUrl?: string | null;
+  mesheryUrl?: string | null;
+}
+
+export interface DockerOpsSummary {
+  configured: boolean;
+  reachable: boolean;
+  stackCount?: number | null;
+  runningContainers?: number | null;
+  endpointCount?: number | null;
+  error?: string | null;
+}
+
+export interface KubernetesOpsSummary {
+  configured: boolean;
+  reachable: boolean;
+  version?: string | null;
+  connectionCount?: number | null;
+  error?: string | null;
+}
+
+export interface OpsSummary {
+  docker: DockerOpsSummary;
+  kubernetes: KubernetesOpsSummary;
+  intentNodeCount?: number | null;
+}
+
 export interface TopologyNode {
   id: string;
   kind: string;
@@ -191,6 +219,14 @@ export function useWorkflow() {
     return apiJson("/v1/workspace/deployment");
   }
 
+  async function fetchOpsConfig(): Promise<OpsConfig> {
+    return apiJson("/v1/ops/config");
+  }
+
+  async function fetchOpsSummary(): Promise<OpsSummary> {
+    return apiJson("/v1/ops/summary");
+  }
+
   async function listWorkspace(
     relPath: string,
     recursive = false,
@@ -267,6 +303,8 @@ export function useWorkflow() {
     fetchPhase,
     fetchGates,
     fetchDeploymentConfig,
+    fetchOpsConfig,
+    fetchOpsSummary,
     listWorkspace,
     readWorkspaceFile,
     writeWorkspaceFile,

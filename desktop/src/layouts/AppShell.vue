@@ -4,9 +4,10 @@ import ChatPage from "../pages/Chat.vue";
 import LangflowEditorPage from "../pages/LangflowEditor.vue";
 import ProjectHomePage from "../pages/ProjectHome.vue";
 import SettingsPage from "../pages/Settings.vue";
+import TopologyCanvasPage from "../pages/TopologyCanvas.vue";
 import WorkflowRunPage from "../pages/WorkflowRun.vue";
 
-type AppView = "home" | "workflow" | "chat" | "langflow" | "settings";
+type AppView = "home" | "workflow" | "topology" | "chat" | "langflow" | "settings";
 
 const view = ref<AppView>("home");
 const workspace = ref("");
@@ -26,6 +27,7 @@ function onProjectOpened(path: string) {
 const navItems: { id: AppView; label: string }[] = [
   { id: "home", label: "Home" },
   { id: "workflow", label: "Workflow" },
+  { id: "topology", label: "Topology" },
   { id: "chat", label: "Chat" },
   { id: "langflow", label: "Langflow" },
   { id: "settings", label: "Settings" },
@@ -52,6 +54,7 @@ const navItems: { id: AppView; label: string }[] = [
 
     <ProjectHomePage v-if="view === 'home'" @opened="onProjectOpened" />
     <WorkflowRunPage v-else-if="view === 'workflow'" :workspace="workspace" />
+    <TopologyCanvasPage v-else-if="view === 'topology'" :workspace="workspace" />
     <ChatPage v-else-if="view === 'chat'" v-model:workspace="workspace" />
     <LangflowEditorPage v-else-if="view === 'langflow'" :workspace="workspace" />
     <SettingsPage v-else @back="view = 'home'" />

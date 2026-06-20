@@ -16,6 +16,8 @@
     pre { background: #111827; color: #f3f4f6; padding: 12px; border-radius: 8px; overflow: auto; font-size: 12px; }
     h1 { font-size: 18px; margin: 0 0 12px; }
     h2 { font-size: 14px; margin: 16px 0 8px; }
+    .error { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; border-radius: 8px; padding: 8px 10px; font-size: 13px; margin-bottom: 10px; }
+    .hint { font-size: 12px; color: #6b7280; margin-bottom: 8px; }
   </style>
 </head>
 <body>
@@ -45,12 +47,24 @@
     <button id="addEdge">Add edge</button>
   </aside>
   <main>
+    <div id="error" class="error" hidden></div>
     <h2>Nodes</h2>
     <div id="nodes"></div>
     <h2>Edges</h2>
     <div id="edges"></div>
     <h2>Import compose</h2>
-    <textarea id="composeImport" rows="8" placeholder="Paste docker-compose.yml"></textarea>
+    <p class="hint">Paste a docker-compose.yml below, then click Import.</p>
+    <textarea id="composeImport" rows="8" placeholder="services:
+  api:
+    build: .
+    ports:
+      - '8000:8000'
+    depends_on:
+      - app-db
+  app-db:
+    image: mysql:8.0
+  cache:
+    image: redis:7"></textarea>
     <button id="importCompose">Import compose</button>
     <h2>Export compose</h2>
     <button id="exportCompose">Export compose</button>
@@ -69,6 +83,32 @@
       return document.getElementById("project").value.trim() || "demo";
     }
 
+    function showError(message) {
+      const el = document.getElementById("error");
+      if (!message) {
+        el.hidden = true;
+        el.textContent = "";
+        return;
+      }
+      el.hidden = false;
+      el.textContent = message;
+    }
+
+    async function readJsonOrThrow(res) {
+      const text = await res.text();
+      let data;
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        throw new Error(text || `Request failed (${res.status})`);
+      }
+      if (!res.ok) {
+        const detail = data.detail ?? text ?? `Request failed (${res.status})`;
+        throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+      }
+      return data;
+    }
+
     function render() {
       document.getElementById("nodes").innerHTML = topology.nodes.map(n =>
         `<div class="node"><strong>${n.id}</strong> (${n.kind}${n.engine ? ", " + n.engine : ""})</div>`
@@ -79,24 +119,35 @@
     }
 
     async function loadTopology() {
-      const res = await fetch(`/v1/topology?project=${encodeURIComponent(projectId())}`);
-      if (res.status === 404) {
-        topology = { version: 1, project: projectId(), nodes: [], edges: [], targets: [] };
-      } else {
-        topology = await res.json();
+      showError("");
+      try {
+        const res = await fetch(`/v1/topology?project=${encodeURIComponent(projectId())}`);
+        if (res.status === 404) {
+          topology = { version: 1, project: projectId(), nodes: [], edges: [], targets: [] };
+        } else {
+          topology = await readJsonOrThrow(res);
+        }
+        render();
+      } catch (err) {
+        showError(err.message || String(err));
       }
-      render();
     }
 
     document.getElementById("load").onclick = () => loadTopology();
     document.getElementById("save").onclick = async () => {
-      topology.project = projectId();
-      await fetch(`/v1/topology?project=${encodeURIComponent(projectId())}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(topology),
-      });
-      await loadTopology();
+      showError("");
+      try {
+        topology.project = projectId();
+        const res = await fetch(`/v1/topology?project=${encodeURIComponent(projectId())}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(topology),
+        });
+        await readJsonOrThrow(res);
+        await loadTopology();
+      } catch (err) {
+        showError(err.message || String(err));
+      }
     };
     document.getElementById("addNode").onclick = () => {
       const id = document.getElementById("nodeId").value.trim();
@@ -117,23 +168,37 @@
       render();
     };
     document.getElementById("importCompose").onclick = async () => {
-      const content = document.getElementById("composeImport").value;
-      const res = await fetch(`/v1/topology/import?project=${encodeURIComponent(projectId())}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ format: "compose", content }),
-      });
-      topology = await res.json();
-      render();
+      showError("");
+      const content = document.getElementById("composeImport").value.trim();
+      if (!content) {
+        showError("Paste docker-compose YAML into the text area before importing.");
+        return;
+      }
+      try {
+        const res = await fetch(`/v1/topology/import?project=${encodeURIComponent(projectId())}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ format: "compose", content }),
+        });
+        topology = await readJsonOrThrow(res);
+        render();
+      } catch (err) {
+        showError(err.message || String(err));
+      }
     };
     document.getElementById("exportCompose").onclick = async () => {
-      const res = await fetch(`/v1/topology/export?project=${encodeURIComponent(projectId())}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ format: "compose" }),
-      });
-      const data = await res.json();
-      document.getElementById("exportOutput").textContent = data.content || "";
+      showError("");
+      try {
+        const res = await fetch(`/v1/topology/export?project=${encodeURIComponent(projectId())}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ format: "compose" }),
+        });
+        const data = await readJsonOrThrow(res);
+        document.getElementById("exportOutput").textContent = data.content || "";
+      } catch (err) {
+        showError(err.message || String(err));
+      }
     };
 
     loadTopology();

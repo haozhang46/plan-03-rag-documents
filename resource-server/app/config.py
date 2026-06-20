@@ -8,6 +8,9 @@ class Settings(BaseSettings):
     port: int = 9000
     db_path: str = "resource-server.db"
     auth_token: str | None = None
+    portainer_url: str | None = None
+    portainer_api_token: str | None = None
+    meshery_url: str | None = None
 
 
 settings = Settings()
