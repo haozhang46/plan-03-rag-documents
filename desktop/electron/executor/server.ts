@@ -1,5 +1,6 @@
 import http from "node:http";
 import { dialog } from "electron";
+import { logger } from "../utils/logger";
 import {
   gitDiff,
   gitStatus,
@@ -16,7 +17,26 @@ export interface ToolRequest {
 }
 
 export function startExecutorServer(port = 17351): http.Server {
+  // Log startup
+  logger.startup("Executor", port);
+
   const server = http.createServer(async (req, res) => {
+    const startTime = Date.now();
+    const method = req.method || "GET";
+    const url = req.url || "/";
+
+    // Capture original end
+    const originalEnd = res.end.bind(res);
+    res.end = (...args: unknown[]) => {
+      const duration = Date.now() - startTime;
+      try {
+        logger.request(method, url, res.statusCode || 200, duration);
+      } catch {
+        // Silently ignore logging errors
+      }
+      return originalEnd(...args);
+    };
+
     if (req.method !== "POST" || req.url !== "/v1/tool") {
       res.writeHead(404);
       res.end();
@@ -30,18 +50,26 @@ export function startExecutorServer(port = 17351): http.Server {
     req.on("end", async () => {
       try {
         const payload = JSON.parse(body) as ToolRequest;
+        logger.info("Executing tool", { tool: payload.name, callId: payload.call_id });
         const output = await handleTool(payload);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true, output }));
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        const error = err instanceof Error ? err : new Error(String(err));
+        logger.error("Tool execution failed", error, { body: body.slice(0, 1000) });
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: false, error: message }));
+        res.end(JSON.stringify({ ok: false, error: error.message }));
       }
     });
   });
 
-  server.listen(port, "127.0.0.1");
+  server.on("error", (err) => {
+    logger.error("Executor server error", err);
+  });
+
+  server.listen(port, "127.0.0.1", () => {
+    logger.info("Executor server listening", { port, address: "127.0.0.1" });
+  });
   return server;
 }
 
