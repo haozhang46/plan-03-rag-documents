@@ -62,7 +62,7 @@ git config --global url."https://github.com/".insteadOf git@github.com: 2>/dev/n
 
 echo "  → git fetch + reset"
 git fetch origin main
-git reset --hard origin/main
+git reset --hard FETCH_HEAD
 
 echo "  → update submodules"
 git submodule update --init --recursive
