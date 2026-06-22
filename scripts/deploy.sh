@@ -57,6 +57,9 @@ cd ${SERVER_PATH}
 git config user.email "deploy@agentflow.local" 2>/dev/null || true
 git config user.name "deploy-bot" 2>/dev/null || true
 
+# Rewrite SSH submodule URLs to HTTPS (server has no SSH key)
+git config --global url."https://github.com/".insteadOf git@github.com: 2>/dev/null || true
+
 echo "  → git fetch + reset"
 git fetch origin main
 git reset --hard origin/main
