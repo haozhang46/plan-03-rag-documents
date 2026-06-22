@@ -12,6 +12,7 @@ from app.observability.langfuse import get_langfuse_client
 from app.rag.authorize import authorize_rag_datasets
 from app.rag.bindings_store import RagflowBindingsStore
 from app.skills.resolve import resolve_skill_names, validate_skill_names
+from app.config import get_settings
 
 router = APIRouter(prefix="/v1")
 
@@ -76,20 +77,96 @@ def _resolve_graph(request: Request, flow_id: str):
 
 
 async def _stream_tokens(graph, state_input, config):
-    """Yield token-level SSE chunks and return final citations."""
+    """Yield structured SSE events from LangGraph astream_events v2."""
     citations: list[str] | None = None
+    total_input_tokens = 0
+    total_output_tokens = 0
+    model_name = ""
+
     async for event in graph.astream_events(state_input, config, version="v2"):
         kind = event["event"]
+
         if kind == "on_chat_model_stream":
             chunk = event["data"]["chunk"]
             if chunk.content:
-                yield {"content": chunk.content}
+                yield {"event": "message", "data": {"content": chunk.content}}
+
+        elif kind == "on_chat_model_end":
+            output = event["data"].get("output", {})
+            usage = getattr(output, "usage_metadata", None) or {}
+            input_tokens = usage.get("input_tokens", 0)
+            output_tokens = usage.get("output_tokens", 0)
+            if input_tokens or output_tokens:
+                total_input_tokens += input_tokens
+                total_output_tokens += output_tokens
+            model_name = (
+                getattr(output, "response_metadata", {}).get("model_name", "")
+                or event.get("metadata", {}).get("ls_model_name", "")
+            )
+
+        elif kind == "on_tool_start":
+            tool_name = event.get("name", "unknown")
+            tool_input = event["data"].get("input", {})
+            call_id = event.get("run_id", "")
+            yield {
+                "event": "tool_start",
+                "data": {
+                    "call_id": call_id,
+                    "name": tool_name,
+                    "input": _safe_serialize(tool_input),
+                },
+            }
+
+        elif kind == "on_tool_end":
+            tool_name = event.get("name", "unknown")
+            tool_output = event["data"].get("output", "")
+            call_id = event.get("run_id", "")
+            yield {
+                "event": "tool_end",
+                "data": {
+                    "call_id": call_id,
+                    "name": tool_name,
+                    "output": _safe_serialize(tool_output),
+                },
+            }
+
         elif kind == "on_chain_end" and event["name"] == "LangGraph":
             output = event["data"].get("output", {})
             if isinstance(output, dict):
                 citations = output.get("citations")
+
     if citations:
-        yield {"citations": citations}
+        yield {"event": "message", "data": {"citations": citations}}
+    if total_input_tokens or total_output_tokens:
+        yield {
+            "event": "usage",
+            "data": {
+                "input_tokens": total_input_tokens,
+                "output_tokens": total_output_tokens,
+                "model": model_name,
+            },
+        }
+
+
+def _safe_serialize(obj):
+    """Coerce tool input/output to a JSON-safe dict or string."""
+    if obj is None:
+        return None
+    try:
+        if isinstance(obj, (dict, list)):
+            return obj
+        s = str(obj)
+        if len(s) > 4000:
+            s = s[:4000] + "...[truncated]"
+        return s
+    except Exception:
+        return "[unserializable]"
+
+
+def _langfuse_url(trace_id: str) -> str:
+    settings = get_settings()
+    host = (settings.langfuse_host or "https://cloud.langfuse.com").rstrip("/")
+    return f"{host}/trace/{trace_id}"
 
 
 @router.post("/chat")
@@ -147,24 +224,39 @@ async def chat(
 
     async def event_stream():
         client = get_langfuse_client()
-        trace_name = f"chat:{req.flow_id}:{req.thread_id}"
+        trace_id = ""
         if client:
             trace_id = client.create_trace_id()
+
+        # Emit trace event first so frontend has the trace ID immediately
+        if trace_id:
+            yield {
+                "event": "trace",
+                "data": json.dumps({
+                    "trace_id": trace_id,
+                    "langfuse_url": _langfuse_url(trace_id),
+                }),
+            }
+
+        if client:
+            trace_name = f"chat:{req.flow_id}:{req.thread_id}"
             with client.start_as_current_observation(
                 name=trace_name,
                 trace_id=trace_id,
             ) as span:
                 full_content = ""
                 async for chunk in _stream_tokens(graph, state_input, config):
-                    if "content" in chunk:
-                        full_content += chunk["content"]
-                        yield {"event": "message", "data": json.dumps(chunk)}
-                    elif "citations" in chunk:
-                        yield {"event": "message", "data": json.dumps(chunk)}
+                    evt = chunk.get("event", "message")
+                    data = chunk.get("data", chunk)
+                    if isinstance(data, dict) and "content" in data:
+                        full_content += data.get("content", "")
+                    yield {"event": evt, "data": json.dumps(data)}
                 span.update(output=full_content)
         else:
             async for chunk in _stream_tokens(graph, state_input, config):
-                yield {"event": "message", "data": json.dumps(chunk)}
+                evt = chunk.get("event", "message")
+                data = chunk.get("data", chunk)
+                yield {"event": evt, "data": json.dumps(data)}
 
         yield {"event": "done", "data": "{}"}
 
