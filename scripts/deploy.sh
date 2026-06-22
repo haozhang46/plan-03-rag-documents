@@ -13,6 +13,7 @@ SERVER_HOST="1.14.158.173"
 SERVER_USER="root"
 SERVER_PATH="/root/agentFlowContainer"
 COMPOSE_FILE="docker-compose.server.yml"
+REPO_URL="https://github.com/haozhang46/plan-03-rag-documents.git"
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -24,11 +25,33 @@ echo "=== 2. Push parent repo ==="
 cd "$REPO_ROOT"
 git push origin main 2>&1 || echo "  (already up to date)"
 
-echo "=== 3. SSH → pull + rebuild ==="
+echo "=== 3. SSH → deploy ==="
 ssh "${SERVER_USER}@${SERVER_HOST}" <<ENDSSH
 set -e
-cd ${SERVER_PATH}
 
+# First time setup: if .git is missing, clone into a temp dir and move .git
+if [ ! -d ${SERVER_PATH}/.git ]; then
+  echo "  → repo missing .git — initializing"
+  if [ -d /root/repo-temp ]; then
+    rm -rf /root/repo-temp
+  fi
+  git clone ${REPO_URL} /root/repo-temp
+  # Preserve .env and other runtime files before replacing
+  if [ -f ${SERVER_PATH}/.env ]; then
+    cp ${SERVER_PATH}/.env /root/repo-temp/.env
+  fi
+  if [ -f ${SERVER_PATH}/docker-compose.server.yml ]; then
+    cp ${SERVER_PATH}/docker-compose.server.yml /root/repo-temp/docker-compose.server.yml
+  fi
+  if [ -d ${SERVER_PATH}/config ]; then
+    cp -r ${SERVER_PATH}/config /root/repo-temp/ 2>/dev/null || true
+  fi
+  rm -rf ${SERVER_PATH}
+  mv /root/repo-temp ${SERVER_PATH}
+  echo "  ✓ repo initialized"
+fi
+
+cd ${SERVER_PATH}
 echo "  → git pull"
 git pull origin main
 
