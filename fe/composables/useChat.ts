@@ -1,5 +1,5 @@
 import { parseSseStream } from "@agent-flow/shared-ui";
-import type { ChatResponseChunk } from "~/types";
+import type { ChatStreamEvent } from "~/types";
 import { useApiFetch } from "~/composables/useApiFetch";
 
 export function useChat() {
@@ -15,21 +15,15 @@ export function useChat() {
       documentIds?: string[];
       datasetIds?: string[];
     },
-  ): AsyncGenerator<ChatResponseChunk> {
+  ): AsyncGenerator<ChatStreamEvent> {
     const body: Record<string, unknown> = {
       flow_id: options?.flowId ?? "default",
       thread_id: threadId,
       message,
     };
-    if (options?.skillNames?.length) {
-      body.skill_names = options.skillNames;
-    }
-    if (options?.documentIds?.length) {
-      body.document_ids = options.documentIds;
-    }
-    if (options?.datasetIds?.length) {
-      body.dataset_ids = options.datasetIds;
-    }
+    if (options?.skillNames?.length) body.skill_names = options.skillNames;
+    if (options?.documentIds?.length) body.document_ids = options.documentIds;
+    if (options?.datasetIds?.length) body.dataset_ids = options.datasetIds;
 
     const res = await apiFetch(`${config.public.apiBase}/v1/chat`, {
       method: "POST",
@@ -42,8 +36,43 @@ export function useChat() {
     }
 
     for await (const event of parseSseStream(res.body)) {
-      if (event.type === "message") {
-        yield event.chunk;
+      switch (event.type) {
+        case "message":
+          yield {
+            type: "message",
+            content: event.chunk.content ?? "",
+            citations: event.chunk.citations,
+          };
+          break;
+        case "trace":
+          yield { type: "trace", event: event.event };
+          break;
+        case "usage":
+          yield { type: "usage", event: event.event };
+          break;
+        case "tool_start":
+          yield {
+            type: "tool_start",
+            event: {
+              call_id: event.event.call_id ?? "",
+              name: event.event.name ?? "unknown",
+              input: event.event.input,
+            },
+          };
+          break;
+        case "tool_end":
+          yield {
+            type: "tool_end",
+            event: {
+              call_id: event.event.call_id ?? "",
+              name: event.event.name ?? "unknown",
+              output: event.event.output,
+            },
+          };
+          break;
+        case "done":
+          yield { type: "done" };
+          break;
       }
     }
   }

@@ -58,3 +58,29 @@ export interface LoginResponse {
   expires_in: number;
   user: AuthUser;
 }
+
+export interface TraceEvent {
+  trace_id: string;
+  langfuse_url: string;
+}
+
+export interface UsageEvent {
+  input_tokens: number;
+  output_tokens: number;
+  model: string;
+}
+
+export interface ToolCallEvent {
+  call_id: string;
+  name: string;
+  input?: unknown;
+  output?: unknown;
+}
+
+export type ChatStreamEvent =
+  | { type: "message"; content: string; citations?: string[] }
+  | { type: "trace"; event: TraceEvent }
+  | { type: "usage"; event: UsageEvent }
+  | { type: "tool_start"; event: ToolCallEvent }
+  | { type: "tool_end"; event: ToolCallEvent }
+  | { type: "done" };
