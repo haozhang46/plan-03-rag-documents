@@ -1,3 +1,0 @@
-resources:
-  - { type: postgres, name: app-db, version: "16" }
-  - { type: redis, name: cache }

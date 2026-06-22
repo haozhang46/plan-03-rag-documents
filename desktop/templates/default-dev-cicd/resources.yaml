@@ -1,3 +1,0 @@
-resources:
-  - { type: mysql, name: app-db, version: "8.0" }
-  - { type: redis, name: cache }
