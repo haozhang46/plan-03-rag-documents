@@ -57,8 +57,9 @@ cd ${SERVER_PATH}
 git config user.email "deploy@agentflow.local" 2>/dev/null || true
 git config user.name "deploy-bot" 2>/dev/null || true
 
-echo "  → git pull"
-git pull --ff-only origin main
+echo "  → git fetch + reset"
+git fetch origin main
+git reset --hard origin/main
 
 echo "  → update submodules"
 git submodule update --init --recursive
