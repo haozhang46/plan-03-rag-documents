@@ -52,8 +52,13 @@ if [ ! -d ${SERVER_PATH}/.git ]; then
 fi
 
 cd ${SERVER_PATH}
+
+# Ensure git user is set (required for merge commits)
+git config user.email "deploy@agentflow.local" 2>/dev/null || true
+git config user.name "deploy-bot" 2>/dev/null || true
+
 echo "  → git pull"
-git pull origin main
+git pull --ff-only origin main
 
 echo "  → update submodules"
 git submodule update --init --recursive
