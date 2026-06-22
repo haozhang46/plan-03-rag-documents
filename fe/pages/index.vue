@@ -62,6 +62,29 @@
       <div class="flex-1 overflow-y-auto p-6">
         <ChatMessage v-for="(msg, i) in messages" :key="i" :msg="msg" />
         <div v-if="loading" class="text-gray-400 text-sm">Thinking...</div>
+        <!-- Trace link -->
+        <div v-if="traceUrl" class="px-6 py-1 text-xs text-blue-500">
+          <a :href="traceUrl" target="_blank" rel="noopener">Open trace in Langfuse →</a>
+        </div>
+
+        <!-- Tool runs -->
+        <div v-if="toolRuns.length" class="px-6 py-2 space-y-1">
+          <div
+            v-for="run in toolRuns"
+            :key="run.callId"
+            class="text-xs text-gray-500 flex items-center gap-2"
+          >
+            <span :class="run.status === 'running' ? 'text-yellow-500' : 'text-green-500'">●</span>
+            <span class="font-medium">{{ run.name }}</span>
+            <span v-if="run.status === 'running'">running...</span>
+            <span v-else-if="run.output" class="truncate max-w-xs">{{ run.output.slice(0, 200) }}</span>
+          </div>
+        </div>
+
+        <!-- Token usage -->
+        <div v-if="tokenUsage" class="px-6 py-1 text-xs text-gray-400">
+          {{ tokenUsage.input }} in / {{ tokenUsage.output }} out · {{ tokenUsage.model }}
+        </div>
       </div>
       <div
         v-if="flowId || selectedSkillNames.length || selectedDatasetIds.length"
@@ -106,6 +129,10 @@ const {
   clearSelection: clearDatasetSelection,
 } = useRagDatasets(activeThreadId);
 
+const traceUrl = ref<string>("");
+const toolRuns = ref<Array<{ callId: string; name: string; status: string; output?: string }>>([]);
+const tokenUsage = ref<{ input: number; output: number; model: string } | null>(null);
+
 onMounted(async () => {
   await load();
   await Promise.all([refreshFlows(), refreshSkills(), refreshDatasets()]);
@@ -128,6 +155,9 @@ async function onSend(text: string) {
   const threadId = activeThreadId.value!;
   addUserMessage(text);
   loading.value = true;
+  traceUrl.value = "";
+  toolRuns.value = [];
+  tokenUsage.value = null;
 
   try {
     const gen = streamChat(threadId, text, {
@@ -139,9 +169,40 @@ async function onSend(text: string) {
         ? selectedDatasetIds.value
         : undefined,
     });
-    for await (const chunk of gen) {
-      if (chunk.content) {
-        addAssistantChunk(chunk.content, chunk.citations);
+    for await (const event of gen) {
+      switch (event.type) {
+        case "message":
+          addAssistantChunk(event.content, event.citations);
+          break;
+        case "trace":
+          traceUrl.value = event.event.langfuse_url;
+          break;
+        case "tool_start":
+          toolRuns.value.push({
+            callId: event.event.call_id,
+            name: event.event.name,
+            status: "running",
+          });
+          break;
+        case "tool_end": {
+          const run = toolRuns.value.find(r => r.callId === event.event.call_id);
+          if (run) {
+            run.status = "done";
+            run.output = typeof event.event.output === "string"
+              ? event.event.output
+              : JSON.stringify(event.event.output);
+          }
+          break;
+        }
+        case "usage":
+          tokenUsage.value = {
+            input: event.event.input_tokens,
+            output: event.event.output_tokens,
+            model: event.event.model,
+          };
+          break;
+        case "done":
+          break;
       }
     }
     const lastMsg = messages.value[messages.value.length - 1];
